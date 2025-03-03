@@ -11,6 +11,7 @@ from scipy.stats import pearsonr, spearmanr, norm, ecdf
 from scipy.signal import correlate
 from .waveform_processing import *
 from .data_process import clean_cols_rh
+from .metric import *
 import matplotlib.pyplot as plt
 import matplotlib
 
@@ -254,6 +255,7 @@ class CorrectionScorer:
                 #offset = str(sim_point['grid_offset'])
                 
                 if footprint_shot_number in []:
+                    common_z = np.sort(np.unique(np.concatenate((sim_z, gedi_z))))
                     plot_waveform_comparison(sim_wave_interp,
                                             ori_wave_interp,
                                             common_z,
@@ -268,8 +270,8 @@ class CorrectionScorer:
                                             0)
                 
 
-        if correls:
-            simulated['waveform_matching'] = correls
+        if correlations:
+            simulated['waveform_matching'] = correlations
         
         if wave_distances:
             simulated['waveform_distance'] = wave_distances
@@ -278,7 +280,8 @@ class CorrectionScorer:
             simulated['kl_distance'] = kl_scores
 
         if self.add_info:
-            simulated['mean_correl_waveform'] = simulated['waveform_matching'].mean() # Calculate mean waveform matching correlation
+            #simulated['mean_correl_waveform'] = simulated['waveform_matching'].mean() # Calculate mean waveform matching correlation
+            simulated['mean_correl_waveform'] = 0
 
         return simulated
 

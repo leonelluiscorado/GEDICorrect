@@ -56,7 +56,8 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
                            grid=None,
                            num_points=None,
                            max_radius=12.5,
-                           min_dist=1.0):
+                           min_dist=1.0,
+                           simulate_original=True):
     '''
     Core of GEDI Simulation footprints.
     1 - Generates points around footprint centroid
@@ -88,7 +89,6 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
 
     ## Generate txt list of coordinates from random points
     if num_points:
-
         ## Generate random points around footprint
         rand_points = generate_random_points(footprint['geometry'].x, footprint['geometry'].y, num_points=num_points, max_radius=max_radius, min_dist=min_dist)
 
@@ -105,7 +105,7 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
     metric_outroot = os.path.join(temp_dir, f"{idx}_")
 
     ## Simulate waveforms
-    exit_code = subprocess.run(["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", "32629", "-ground", "-maxBins", nbins, "-output", h5_file_dir], stdout=subprocess.DEVNULL)
+    exit_code = subprocess.run(["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", "3763", "-ground", "-maxBins", nbins, "-output", h5_file_dir], stdout=subprocess.DEVNULL)
     exit_code = subprocess.run(["gediMetric", "-input", h5_file_dir, "-readHDFgedi", "-ground", "-varScale", "3.5", "-sWidth", "0.8", "-rhRes", "1", "-laiRes", "5", "-outRoot", metric_outroot], stdout=subprocess.DEVNULL)
     
     ## Handle each output
@@ -127,7 +127,12 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
         all_df['grid_offset'] = grid
 
     # Filter out special case footprints
-    if len(all_df) < len(grid) or len(all_df) < num_points:
+
+    if grid and len(all_df) < len(grid):
+        # Did not simulate all points, discard
+        return []
+    
+    if num_points and len(all_df) < num_points:
         # Did not simulate all points, discard
         return []
 

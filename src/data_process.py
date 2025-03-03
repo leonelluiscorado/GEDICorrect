@@ -59,7 +59,7 @@ def get_las_extents(las_files_dir, algorithm="convex"):
     las_extents = {}
 
     las_files = [f for f in os.listdir(las_files_dir) if (f.endswith('.las') or f.endswith('.laz'))]
-    shp_file = [f for f in os.listdir(las_files_dir) if (f.endswith('.shp') and f"CorrectALSBounds_{algorithm}" in f)]
+    shp_file = [f for f in os.listdir(las_files_dir) if (f.endswith('.shp') and f"CorrectALSBounds" in f)]
 
     if len(las_files) == 0:
         raise Exception("No LAS files found in specified directory.")
@@ -73,23 +73,24 @@ def get_las_extents(las_files_dir, algorithm="convex"):
     if len(shp_file) != 0:
         # Bounds shapefile found, use it as bounds
         shp_path = os.path.join(las_files_dir, shp_file[0])
-
-        # If bounds of shapefile are of the selected algorithm, select it
-        print(f"Shapefile found: {shp_path}. Using it as bounds.")
+        
+        print(f"Shapefile found: {shp_path}... Using it as bounds")
 
         gdf = gpd.read_file(shp_path)
         if 'file_name' not in gdf.columns:
-            raise ValueError("The shapefile must contain a 'file_name' column to match LAS file names.")
-
+            raise ValueError("The shapefile must contain a file_name column to match LAS file names")
+        
         for _, row in gdf.iterrows():
             las_extents[row['file_name']] = row['geometry']
-        
+
         return las_extents, crs
 
+    print("Processing LAS bounds...")
     with tqdm(total=len(las_files)) as pbar:
         for file in las_files:
             las_file = os.path.join(las_files_dir, file)
             with laspy.open(las_file) as las:
+
                 # Ignore LAS with different CRS
                 if las.header.parse_crs() != crs:
                     pbar.update(1)

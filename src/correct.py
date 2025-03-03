@@ -12,7 +12,7 @@ import time
 from shapely.geometry import Point
 
 from .data_process import get_las_extents, create_buffer, find_intersecting_las_files, generate_grid
-from .simulation import process_footprint, init_random_seed, process_all_footprints
+from .simulation import process_all_footprints, init_random_seed, process_all_footprints
 from .scorer import CorrectionScorer
 from .waveform_processing import plot_waveform_comparison
 
@@ -103,7 +103,8 @@ class GEDICorrect:
                 las_txt_file.write(f"{als_file}\n")
 
         if self.use_parallel:
-            self.__parallel_simulate(num_points=n_points, max_radius=max_radius, min_dist=min_dist)
+            self.__parallel_orbit_simulate()
+            #self.__parallel_simulate(num_points=n_points, max_radius=max_radius, min_dist=min_dist)
         else:
             self.__sequential_simulate(n_points, max_radius, min_dist)
 
@@ -131,7 +132,7 @@ class GEDICorrect:
         # Open GEDI footprint files
         if self.granule_list and len(self.granule_list) >= 1:
             for granule in self.granule_list:
-                granule_df = gpd.read_file(granule, engine='pyogrio').to_crs(self.crs)
+                granule_df = gpd.read_file(granule, engine='pyogrio').to_crs("EPSG:3763") #self.crs)
 
                 # Check if file is empty
                 if len(granule_df) == 0:
@@ -177,6 +178,24 @@ class GEDICorrect:
         If save_sim_points is True, it also outputs all of the simulated points to a SHP file
         """
 
+        if self.save_sim_points:
+            # Save sim points to SHP file
+            save_df = []
+            origin_loc = []
+            for gpd_df in results:
+                if len(gpd_df) != 0:
+                    # RXWAVECOUNT array to str for output purposes
+                    gpd_df['RXWAVECOUNT'] = gpd_df['RXWAVECOUNT'].astype(str)
+                    origin_loc.append(gpd_df.loc[0])
+                    save_df.append(gpd_df)
+
+            # Append to to be saved dataframe
+            sim_save_df = gpd.GeoDataFrame(pd.concat(save_df))
+            sim_save_df.crs = "EPSG:3763"
+            sim_save_df = sim_save_df.drop(columns=['FSIGMA'])
+            sim_save_out_filename = filename.split('/')[-1]
+            sim_save_df.to_file(os.path.join(self.out_dir, 'SIMPOINTS_'+sim_save_out_filename))
+
         if offset:
             selected_rows = []  # List to hold the selected rows from each DataFrame
 
@@ -197,7 +216,7 @@ class GEDICorrect:
                 footprint['RXWAVECOUNT'] = str(footprint['RXWAVECOUNT'])
                 footprint['grid_offset'] = str(footprint['grid_offset'])
 
-            out_df = gpd.GeoDataFrame(selected_rows, crs=self.crs).set_geometry('geometry')
+            out_df = gpd.GeoDataFrame(selected_rows, crs="EPSG:3763").set_geometry('geometry')
             save_out_filename = filename.split('/')[-1].replace('.gpkg', '.shp')
             out_df.to_file(os.path.join(self.out_dir, 'ORBIT_'+save_out_filename))
 
@@ -247,24 +266,6 @@ class GEDICorrect:
             print(f"{filename} contains footprints that are not desirable for correction.  Skipping...")
             return
 
-        if self.save_sim_points:
-            # Save sim points to SHP file
-            save_df = []
-            origin_loc = []
-            for gpd_df in results:
-                if len(gpd_df) != 0:
-                    # RXWAVECOUNT array to str for output purposes
-                    gpd_df['RXWAVECOUNT'] = gpd_df['RXWAVECOUNT'].astype(str)
-                    origin_loc.append(gpd_df.loc[0])
-                    save_df.append(gpd_df)
-
-            # Append to to be saved dataframe
-            sim_save_df = gpd.GeoDataFrame(pd.concat(save_df))
-            sim_save_df.crs = self.crs
-            sim_save_df = sim_save_df.drop(columns=['FSIGMA'])
-            sim_save_out_filename = filename.split('/')[-1]
-            sim_save_df.to_file(os.path.join(self.out_dir, 'SIMPOINTS_'+sim_save_out_filename))
-
         for footprint in final_df:
             # RXWAVECOUNT array to str for output purposes
             footprint['RXWAVECOUNT'] = str(footprint['RXWAVECOUNT'])
@@ -298,7 +299,7 @@ class GEDICorrect:
             with tqdm(total=len(footprints), desc ="Processing Footprints") as pbar:
                 for fpt in footprints:
 
-                    processed_fpt = process_footprint(fpt, self.temp_dir.name,
+                    processed_fpt = process_all_footprints(fpt, self.temp_dir.name,
                                                       original_df=footprint_df,
                                                       crs=str(self.crs).split(":")[-1],
                                                       num_points=num_points,
@@ -331,7 +332,7 @@ class GEDICorrect:
         idx = multiprocessing.current_process().pid
 
         # Simulate
-        simulated_df = process_all_footprints(footprint, grid, temp_dir, self.las_dir, original_df, crs)
+        simulated_df = process_all_footprints(footprint, temp_dir, self.las_dir, original_df, crs, grid=grid)
 
         # Then Score
         scored_df = scorer.score(simulated_df)
@@ -357,7 +358,7 @@ class GEDICorrect:
         idx = multiprocessing.current_process().pid
 
         # Simulate
-        simulated_df = process_all_footprints(footprint, grid, temp_dir, self.las_dir, original_df, crs)
+        simulated_df = process_all_footprints(footprint, temp_dir, self.las_dir, original_df, crs, grid=grid)
 
         # Then Score
         scored_df = scorer.score(simulated_df)
@@ -536,7 +537,7 @@ class GEDICorrect:
                 scorer = CorrectionScorer(original_df=footprint_df, criteria=self.criteria)
 
                 # Define partial functions for the pool.imap
-                partial_func_processing = partial(process_footprint,
+                partial_func_processing = partial(process_all_footprints,
                                                   temp_dir=self.temp_dir.name,
                                                   original_df=footprint_df,
                                                   crs=str(self.crs).split(":")[-1],

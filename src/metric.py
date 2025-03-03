@@ -4,6 +4,7 @@ Helper functions that calculate metrics for waveform similarity between original
 
 from .waveform_processing import *
 from scipy.stats import pearsonr, spearmanr, norm, ecdf
+import math
 
 def pearson_correlation(original_wave, simulated_wave):
     """
