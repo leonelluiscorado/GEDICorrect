@@ -16,7 +16,7 @@ parser.add_argument('--las_dir', required=True, help='Directory of .LAS files re
 parser.add_argument('--out_dir', required=True, help='Directory in which to save the corrected input granules and simulated points', type=str)
 
 parser.add_argument('--save_sim_points', required=False, help='Option to save all the simulated points around each footprint from the input data.',
-                    action='store_true', default=True)
+                    action='store_true', default=False)
 
 parser.add_argument('--save_origin_location', required=False, help='Flag option to save the original location simulated footprint.', action='store_true', default=False)
 
@@ -26,7 +26,7 @@ parser.add_argument('--mode', required=True, help='Selects the footprint correct
 parser.add_argument('--criteria', required=True, help='Set of criteria to select the best footprint. Select from "wave", "rh", "rh_correlation" and "terrain". \
                                                        Select "all" to evaluate all simulated footprints with all the possible criteria', type=str, default='kl')
 
-parser.add_argument('--grid_size', required=False, help='Specifies the size of the grid for “Orbit-level” or “Beam-level” correction methods.', type=int, default=30)
+parser.add_argument('--grid_size', required=False, help='Specifies the size of the grid for “Orbit-level” or “Beam-level” correction methods.', type=int, default=15)
 
 parser.add_argument('--grid_step', required=False, help='Specifies the step size for the grid for “Orbit-level” or “Beam-level” correction methods.', type=int, default=1)
 

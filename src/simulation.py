@@ -75,7 +75,6 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
     with open(os.path.join(temp_dir, f"laslist_{idx}.txt"), "w") as f:
         for las in footprint['intersecting_las']:
             f.write(f"{os.path.join(las_dir, las)}\n")
-
     # Nbins
     nbins = str(original_fpt['rx_sample_count'].values[0]+1)
     
