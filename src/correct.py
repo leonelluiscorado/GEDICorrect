@@ -376,7 +376,7 @@ class GEDICorrect:
 
             # Save files after correcting
             print(f"[Simulate] Saving corrected granule {filename}")
-            self.__save_outputs(results, filename)
+            self._save_outputs(results, filename)
 
 
 
@@ -500,7 +500,7 @@ class GEDICorrect:
 
             # Save files after correcting
             print(f"[Simulate] Saving corrected granule {filename}")
-            self.__save_outputs(processed_fpts, filename, offset=best_offset)
+            self._save_outputs(processed_fpts, filename, offset=best_offset)
 
             del score_dict
 
@@ -582,6 +582,6 @@ class GEDICorrect:
                 best_beam_offset[beam_id] = best_offset
 
             print(f"[Simulate] Saving corrected granule {filename}")
-            self.__save_outputs(processed_fpts, filename, beam_offset=best_beam_offset)
+            self._save_outputs(processed_fpts, filename, beam_offset=best_beam_offset)
 
             del score_dict
