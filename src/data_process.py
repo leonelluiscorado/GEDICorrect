@@ -15,7 +15,16 @@ import os
 
 def create_buffer(footprint, distance):
     """
-    Returns Box buffer around **footprint** centroid
+    Returns a box buffer around footprint centroid with a given
+    distance, adding to the left, right, top and bottom of footprint
+    centroid.
+
+    Args:
+        footprint (DataFrame): GEDI Footprint
+        distance (int): distance in meters relative to GEDI centroid.
+
+    Returns:
+        Box (polygon): Box Polygon boundary coordinates around given footprint. 
     """
     centroid = footprint.geometry.centroid
     return box(centroid.x - distance, centroid.y - distance, centroid.x + distance, centroid.y + distance)
@@ -24,6 +33,12 @@ def create_buffer(footprint, distance):
 def get_convex_hull(points):
     """
     Builds a bounding box using the Convex Hull algorithm for the ALS point cloud
+
+    Args:
+        points (np.array): Set of ALS points.
+
+    Returns:
+        Polygon: polygon or boundary of given set of points.
     """
     hull = ConvexHull(points)
     hull_points = points[hull.vertices]
@@ -34,6 +49,15 @@ def generate_grid(x_max, y_max, step=1):
     Generates a x_max x y_max grid (NxM) combinations list at 'step' steps.
     Returns an 'offsets' list with all of the possible transformations.
     Each offset is a tuple.
+
+    Args:
+        x_max (int): Size for x-axis of grid.
+        y_max (int): Size for y-axis of grid.
+        step (int): Step size between points of grid.
+
+    Returns:
+        offsets (list): A list of coordinates for point in grid (offset),
+                        where each offset is a tuple.
     '''
     offsets = []
 
@@ -54,7 +78,20 @@ def get_las_extents(las_files_dir, algorithm="convex"):
     or 'convex' (uses convex hull to build the extent, may take more time)
 
     It also checks if a bounding of the ALS already exists as a shapefile, to save time for future processing and
-    repeating experiments
+    repeating experiments.
+
+    Args:
+        las_files_dir (str): Directory containing .las files.
+        algorithm (str): Boundary algorithm.
+                         'simple' uses a simple box buffer between x_max and y_max of las points.
+                         'convex' uses the Convex Hull algorithm to find a tight-fitting boundary around
+                          las points.
+
+    Returns:
+        las_extents (dict): A dictionary containing pairs of 'las filename'
+                            and a Polygon object describing the boundary.
+        crs (pyproj.CRS): Coordinate Reference System parsed from ALS.
+                         
     """
     las_extents = {}
 
@@ -128,7 +165,17 @@ def get_las_extents(las_files_dir, algorithm="convex"):
 def find_intersecting_las_files(footprint_buffer, las_extents):
     """
     Helper function to map to input dataframe.
-    Returns a list of all the intersecting las files for each footprint
+    Returns a list of all the intersecting las files for each footprint within ALS.
+
+    Args:
+        footprint_buffer (Polygon): A box buffer around each footprint to verify
+                                    if entire buffer is inside ALS.
+        las_extents (dict): A dictionary containing pairs of 'las filename'
+                            and a Polygon object describing the boundary.
+
+    Returns:
+        intersecting_files (list): List of ALS filenames that intersect with given
+                                   footprint buffer.
     """
     intersecting_files = []
 
@@ -143,9 +190,16 @@ def find_intersecting_las_files(footprint_buffer, las_extents):
 def clean_cols_rh(columns, original=False):
     """
     Helper function to parse Relative Height Metrics columns from a dataframe.
-    Keeps the selected **rh_col_types** columns
+    Keeps the selected **rh_col_types** columns.
 
-    Original files keep the names like 'rh98' and not original files keep like 'rh_98'
+    Original files keep the names like 'rh98' and not original files keep like 'rh_98'.
+
+    Args:
+        columns (list): A list of column names of a DataFrame.
+        original (bool): Flag that changes the 'RH' variable column names.
+
+    Returns:
+        list: A list of clean named columns.
     """
     rh_col_types = [f'{i}' for i in range(25, 105, 5)]
     rh_cols = [col for col in columns if 'rh' in col]
@@ -171,7 +225,14 @@ def clean_cols_rh(columns, original=False):
 
 def parse_simulated_h5(h5_file, num_sim_points):
     """
-    Parses the .h5 file from the GediRat simulation, returning a DataFrame
+    Parses the H5 file from the gediRat simulation, returning a DataFrame.
+
+    Args:
+        h5_file (str): Filename of the H5 File output by gediRat.
+        num_sim_points (int): Number of simulated points by gediRat.
+
+    Returns:
+        waveform_df (DataFrame): The H5 file contents parsed into a DataFrame.
     """
     data_dict = {}
 
@@ -193,7 +254,14 @@ def parse_simulated_h5(h5_file, num_sim_points):
 
 def parse_txt(origin_shotnum, filename):
     """
-    Parses the .txt file from the GediMetrics simulation, returning a DataFrame
+    Parses the TXT file from the gediMetrics simulation, returning a DataFrame.
+
+    Args:
+        origin_shotnum (int): Original shot_number of given footprint to be saved in output DataFrame.
+        filename (str): Filename of the CSV file transformed from the TXT file.
+    
+    Returns:
+        df (DataFrame): The TXT file contents parsed into a DataFrame.
     """
     with open(filename, "r+") as text_file:
         lines = text_file.readlines()
