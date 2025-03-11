@@ -30,7 +30,7 @@ parser.add_argument('--grid_size', required=False, help='Specifies the size of t
 
 parser.add_argument('--grid_step', required=False, help='Specifies the step size for the grid for “Orbit-level” or “Beam-level” correction methods.', type=int, default=1)
 
-parser.add_argument('--n_points', required=False, help='Number of points to simulated around each input footprint', type=int, default=100)
+parser.add_argument('--n_points', required=False, help='Number of points to simulate around each input footprint', type=int, default=100)
 
 parser.add_argument('--radius', required=False, help='Maximum value for radius to simulate points around each original footprint', type=float, default=12.5)
 

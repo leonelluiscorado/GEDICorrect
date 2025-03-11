@@ -41,7 +41,7 @@ class GEDICorrect:
     >> correct = GEDICorrect(granule_list='input_granules',
                       las_dir='las_dir',
                       out_dir='out_dir',
-                      criteria='all',
+                      criteria='kl',
                       save_sim_points=True,
                       use_parallel=True,
                       n_processes=24)
@@ -72,6 +72,7 @@ class GEDICorrect:
 
         self.gedi_granules = {}
 
+        # Perform setup check: ALS bounding and GEDI
         self.setup_status = self._setup()
 
 
@@ -83,6 +84,9 @@ class GEDICorrect:
             n_points: Number of points to simulate around original footprint
             max_radius: Maximum radius distance to place points
             min_dist: Minimum distance between each simulated point
+
+        Returns:
+            None
         """
 
         if not self.setup_status:
@@ -98,13 +102,16 @@ class GEDICorrect:
         ## Save ALS List from *las_dir* to temporary directory for simulation
         als_list = [os.path.join(self.las_dir, f) for f in os.listdir(self.las_dir) if (f.endswith('.las') or f.endswith('.laz'))]
 
+        ## Save ALS list of files for Simulation
         with open(os.path.join(self.temp_dir.name, "alsList.txt"), mode="w") as las_txt_file:
             for als_file in als_list:
                 las_txt_file.write(f"{als_file}\n")
 
+        ## Always simple a middle point
         if not grid_size % 2:
             grid_size += 1
-            
+        
+        ## Mode Selection
         if self.mode == "orbit":
             print("[Setup] Correcting at the ORBIT LEVEL")
             self._orbit_simulate(grid_size=grid_size, grid_step=grid_step)
@@ -123,9 +130,13 @@ class GEDICorrect:
 
     def _setup(self):
         """
-        Sanity check of GEDI Files and ALS Files
+        Sanity check and setup of GEDI Files and ALS Files
 
-        returns: setup status, if true, the correction can continue
+        Args:
+            None
+
+        Returns: 
+            bool: Setup Status, if true, the correction can continue
         """
 
         print("[Setup] Processing list of GEDI orbits and LAS files")
@@ -173,43 +184,78 @@ class GEDICorrect:
                              " L1B files exist, or intersecting LAS Files exist and create another instance of this class")
             return False
 
+        # Setup complete and OKAY
         return True
             
     def _check_setup_status(self):
         """
-        Returns setup status
+        Check Setup Status
+
+        returns:
+            bool: Setup Status
         """
         return self.setup_status
 
-    def _save_outputs(self, results, filename, offset=None, beam_offset=None):
+    def _save_outputs(self, results, filename, offset=None, beam_offset=None) -> None:
         """
-        Saves outputs from the results argument into (currently) SHP files only
-        If save_sim_points is True, it also outputs all of the simulated points to a SHP file
+        Saves the output of the correction process into new files of GEDI footprints.
+
+        Consists of three output modes:
+            1 - Output a file of simulations at original location of each GEDI footprint;
+            2 - Output a file of all simulations around each GEDI footprint;
+            3 - Output a file of the corrected (highest scored) simulated footprints.
+
+        Args:
+            results (list): A list of DataFrames, each containing scored simulated GEDI footprints for a
+                            specific footprint (output of the scoring unit).
+            filename (str): Filename of output GEDI granule.
+            offset (tuple): A tuple containing the offset coordinates to move each footprint in results. Valid
+                            for Orbit-level correction
+            beam_offset (dict): A dictionary containing the BEAM and offset tuple pairing, which represents a
+                                specific offset for each BEAM. Valid for Beam-level correction.
+
+        Returns:
+            None
         """
 
-        if self.save_sim_points:
-            # Save sim points to SHP file
-            save_df = []
+        if self.save_origin_location:
+            # Save simulated footprint at original location
             origin_loc = []
             for gpd_df in results:
                 if len(gpd_df) != 0:
                     # RXWAVECOUNT array to str for output purposes
                     gpd_df['RXWAVECOUNT'] = gpd_df['RXWAVECOUNT'].astype(str)
 
-                    if offset:
-                        gpd_df['grid_offset'] = gpd_df['grid_offset'].astype(str)
+                    origin_loc.append(gpd_df.loc[0])
 
-                    #origin_loc.append(gpd_df.loc[0])
+            # Save original location dataframe
+            origin_df = gpd.GeoDataFrame(origin_loc, crs=self.crs).set_geometry('geometry')
+            out_filename = filename.split('/')[-1]
+            origin_df = origin_df.drop(columns=['FSIGMA'])
+            origin_df.to_file(os.path.join(self.out_dir, 'ORIGINLOC_'+out_filename))
+
+
+        if self.save_sim_points:
+            # Save sim points to SHP file
+            save_df = []
+            for gpd_df in results:
+                if len(gpd_df) != 0:
+                    # RXWAVECOUNT array to str for output purposes
+                    gpd_df['RXWAVECOUNT'] = gpd_df['RXWAVECOUNT'].astype(str)
+
                     save_df.append(gpd_df)
 
             # Append to to be saved dataframe
             sim_save_df = gpd.GeoDataFrame(pd.concat(save_df))
-            sim_save_df.crs = "EPSG:3763"
+            sim_save_df.crs = self.crs
             sim_save_df = sim_save_df.drop(columns=['FSIGMA'])
             sim_save_out_filename = filename.split('/')[-1]
             sim_save_df.to_file(os.path.join(self.out_dir, 'SIMPOINTS_'+sim_save_out_filename))
 
+        ## Save correct (highest scored) simulated footprints
         if offset:
+            # Orbit-Level mode
+
             selected_rows = []  # List to hold the selected rows from each DataFrame
 
             # Loop over each DataFrame in the results list
@@ -217,7 +263,7 @@ class GEDICorrect:
                 # Filter the rows that match the best offset
                 filtered_df = df[df['grid_offset'] == offset]
 
-                        # Check if any rows match the best offset
+                # Check if any rows match the best offset
                 if not filtered_df.empty:
                     # Extract the first matching row as a Series
                     best_row = filtered_df.iloc[0]
@@ -229,14 +275,13 @@ class GEDICorrect:
                 footprint['RXWAVECOUNT'] = str(footprint['RXWAVECOUNT'])
                 footprint['grid_offset'] = str(footprint['grid_offset'])
 
-            out_df = gpd.GeoDataFrame(selected_rows, crs="EPSG:3763", geometry='geometry')
-            save_out_filename = filename.split('/')[-1].replace('.gpkg', '.shp')
+            out_df = gpd.GeoDataFrame(selected_rows, crs=self.crs, geometry='geometry')
+            out_df = out_df.drop(columns=['FSIGMA'])
             out_df.to_file(os.path.join(self.out_dir, 'ORBIT_'+save_out_filename))
 
-            return out_df
+        elif beam_offset:
+            # Beam-Level mode
 
-        if beam_offset:
-        # Correction at the BEAM LEVEL
             selected_rows = []  # List to hold the selected rows from each DataFrame
 
             # Loop over each DataFrame in the results list
@@ -263,28 +308,26 @@ class GEDICorrect:
 
             # Convert selected rows to a GeoDataFrame for saving as shapefile
             out_df = gpd.GeoDataFrame(selected_rows, crs=self.crs).set_geometry('geometry')
-            save_out_filename = filename.split('/')[-1].replace('.gpkg', '.shp')
+            save_out_filename = filename.split('/')[-1]
             out_df.to_file(os.path.join(self.out_dir, 'BEAM_' + save_out_filename))
 
-            return out_df
+        else:
+            # Footprint-Level mode
+            final_df = []
+            for fpt in results:
+                if len(fpt) != 0:
+                    best_footprint = fpt.sort_values(by=['final_score'], ascending=[False]).head(1).iloc[0]
+                    final_df.append(best_footprint)
 
-        # Return each corrected fpt
-        final_df = []
-        for fpt in results:
-            if len(fpt) != 0:
-                best_footprint = fpt.sort_values(by=['final_score'], ascending=[False]).head(1).iloc[0]
-                final_df.append(best_footprint)
+            if len(final_df) == 0:
+                print(f"{filename} contains footprints that are not desirable for correction.  Skipping...")
+                return
 
-        if len(final_df) == 0:
-            print(f"{filename} contains footprints that are not desirable for correction.  Skipping...")
-            return
+            for footprint in final_df:
+                # RXWAVECOUNT array to str for output purposes
+                footprint['RXWAVECOUNT'] = str(footprint['RXWAVECOUNT'])
 
-        for footprint in final_df:
-            # RXWAVECOUNT array to str for output purposes
-            footprint['RXWAVECOUNT'] = str(footprint['RXWAVECOUNT'])
-
-        ## Save corrected footprints to SHP
-        if self.out_dir:
+            ## Save corrected footprints to SHP
             out_df = gpd.GeoDataFrame(final_df, crs=self.crs).set_geometry('geometry')
             out_filename = filename.split('/')[-1]
             out_df = out_df.drop(columns=['FSIGMA'])
@@ -293,6 +336,20 @@ class GEDICorrect:
 
 
     def _footprint_simulate(self, num_points=100, max_radius=12.5, min_dist=1.0):
+        '''
+        Simulates and Scores at the footprint-level all of the input GEDI granules.
+        User can select parallelization. After processing every single input GEDI orbit
+        it outputs all simulated, original and corrected (highest scored) footprints in
+        files using the '_save_outputs()' function.
+
+        Args:
+            num_points (int): Number of points to simulate around each reported footprint
+            max_radius (float): Maximum radius (distance in meters) from reported footprint to simulate points.
+            min_dist (float): Minimum distance (in meters) to keep between each simulated point.
+
+        Returns:
+            None
+        '''
 
         # Correct granules at the footprint level
         for filename, footprint_df in self.gedi_granules.items():
@@ -381,6 +438,33 @@ class GEDICorrect:
 
 
     def _process_orbit_level(self, footprint, grid, temp_dir, original_df, filename, crs, scorer, score_dict, lock):
+        '''
+        Helper function for the partial used for both parallel and sequential modes for the
+        orbit-level correction at '_orbit_simulate()'. Grabs each footprint and performs simulation
+        and scoring, returning a DataFrame containing all of the simulated points. It then
+        updates a global variable (controlled by the lock if using parallelization) based on
+        the entire orbit's best offset.
+
+        Args:
+            footprint (DataFrame): Single footprint entry of a Dataframe, containing 
+                                   information and relevant variables
+            grid (list): A list of all possible offsets of the given grid
+            temp_dir (TemporaryDirectory): A temporary directory to keep information
+                                           and I/O operations during simulation
+            original_df (DataFrame): The original (reported GEDI) dataframe used in the
+                                     Scoring process
+            filename (str): Original GEDI granule filename
+            crs (pyproj.CRS): Coordinate Reference System of both ALS and GEDI, used for simulation
+            scorer (CorrectionScorer): CorrectionScorer instance used to score simulated points
+            score_dict (dict): A dictionary containing pairs of offset (tuple) and best calculated score for
+                               that offset. Used as a global variable to be updated by all processes (or 1 process)
+            lock (Manager.Lock): Lock instance to control access to the global variable 'score_dict'. Created by
+                                 Manager().
+
+        Returns:
+            scored_df (DataFrame): A dataframe of all of the simulated points around given 'footprint'. 
+                                   Each simulation also has its respective score.
+        '''
          
         # Simulate
         simulated_df = process_all_footprints(footprint, temp_dir, self.las_dir, original_df, crs, grid=grid)
@@ -406,9 +490,34 @@ class GEDICorrect:
         return scored_df
 
 
-
-
     def _process_beam_level(self, footprint, grid, temp_dir, original_df, crs, scorer, score_dict, lock):
+        '''
+        Helper function for the partial used for both parallel and sequential modes for the
+        beam-level correction at '_beam_simulate()'. Grabs each footprint and performs simulation
+        and scoring, returning a DataFrame containing all of the simulated points. It then
+        updates a global variable (controlled by the lock if using parallelization) based on
+        each BEAM's best offset.
+
+        Args:
+            footprint (DataFrame): Single footprint entry of a Dataframe, containing 
+                                   information and relevant variables
+            grid (list): A list of all possible offsets of the given grid
+            temp_dir (TemporaryDirectory): A temporary directory to keep information
+                                           and I/O operations during simulation
+            original_df (DataFrame): The original (reported GEDI) dataframe used in the
+                                     Scoring process
+            filename (str): Original GEDI granule filename
+            crs (pyproj.CRS): Coordinate Reference System of both ALS and GEDI, used for simulation
+            scorer (CorrectionScorer): CorrectionScorer instance used to score simulated points
+            score_dict (dict): A dictionary containing pairs of offset (tuple) and best calculated score for
+                               that offset. Used as a global variable to be updated by all processes (or 1 process)
+            lock (Manager.Lock): Lock instance to control access to the global variable 'score_dict'. Created by
+                                 Manager().
+
+        Returns:
+            scored_df (DataFrame): A dataframe of all of the simulated points around given 'footprint'. 
+                                   Each simulation also has its respective score.
+        '''
 
         # Simulate
         simulated_df = process_all_footprints(footprint, temp_dir, self.las_dir, original_df, crs, grid=grid)
@@ -436,18 +545,32 @@ class GEDICorrect:
         return scored_df
  
 
-
     def _orbit_simulate(self, grid_size, grid_step):
+        '''
+        Simulates and Scores at the orbit-level all of the input GEDI granules.
+        User can select parallelization. After processing every single input GEDI orbit
+        it outputs all simulated, original and corrected (highest scored) footprints in
+        files using the '_save_outputs()' function.
 
+        Args:
+            grid_size (int): Size of search grid around each reported footprint. Final size of grid is
+                             'Grid_Size x Grid_Size'
+            grid_step (int): Distance (in meters) between each point in grid. Defaults to 1 meter.
+
+        Returns:
+            None
+        '''
+
+        # Iterate through each gedi file
         for filename, footprint_df in self.gedi_granules.items():
             print(f"[Simulate] Correcting granule {filename}")
             print(f"[Simulate] Criteria: {self.criteria}")
 
-            scorer = CorrectionScorer(original_df=footprint_df, criteria=self.criteria)
-            offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step)
+            scorer = CorrectionScorer(original_df=footprint_df, criteria=self.criteria) # Init Scorer
+            offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step) # Generate grid
 
             score_dict = {} if not self.use_parallel else Manager().dict()
-            lock = None if not self.use_parallel else Manager().Lock()
+            lock = None if not self.use_parallel else Manager().Lock() # Used to lock global variable of best offset
 
             footprints = [row for i, row in footprint_df.iterrows()]
             processed_fpts = []
@@ -505,6 +628,19 @@ class GEDICorrect:
             del score_dict
 
     def _beam_simulate(self, grid_size, grid_step):
+        '''
+        Simulates and Scores at the Beam-level all of the input GEDI granules.
+        User can select parallelization. After processing every single input GEDI orbit
+        it outputs all simulated, original and corrected (highest scored) footprints in
+        files using the '_save_outputs()' function.
+
+        Args:
+            grid_size (int): Number of points to simulate around each reported footprint
+            grid_step (float): Maximum radius (distance in meters) from reported footprint to simulate points.
+
+        Returns:
+            None
+        '''
 
         # Initialize multiprocessing resources if running in parallel
         manager = Manager() if self.use_parallel else None
