@@ -3,11 +3,23 @@ import geopandas as gpd
 import numpy as np
 import rasterio as rio
 from tqdm import tqdm
+import argparse
 
 '''
 GEDI Variables to change:
 geolocation_elevation_lastbin; geolocation_elevation_bin0; elev_lowestmode; digital_elevation_model 
 '''
+
+parser = argparse.ArgumentParser(description='An auxiliary script to convert GEDI elevation estimates to match a given geoid. \
+                                              Saved files hold a prefix called \'VDATUM\'')
+
+parser.add_argument('--raster_path', required=True, help='Path to geoid raster (TIFF).', type=str)
+parser.add_argument('--gedi_dir', required=True, help='Directory to GEDI files to process.', type=str)
+
+args = parser.parse_args()
+
+rst_path = args.raster_path
+gedi_dir = args.gedi_dir
 
 def fix_vertical_datum(footprint, raster):
 
@@ -27,9 +39,6 @@ def fix_vertical_datum(footprint, raster):
 
     return footprint
 
-rst_path = "/home/yoru/personal/GEDICorrection/gedicorrect/utils/GeoidPT08.tif"
-gedi_dir = "/home/yoru/personal/GEDICorrection/gedicorrect/Area3_VDATUM"
-
 # Read Geoid .TIF
 geoid_raster = rio.open(rst_path)
 
@@ -39,7 +48,7 @@ granule_list = [os.path.join(gedi_dir, f) for f in os.listdir(gedi_dir) if f.end
 # Read GEDI file and apply 
 if granule_list and len(granule_list) >= 1:
     for granule in granule_list:
-        granule_df = gpd.read_file(granule, engine='pyogrio').to_crs("EPSG:3763")
+        granule_df = gpd.read_file(granule, engine='pyogrio')
 
         # Check if file is empty
         if len(granule_df) == 0:
@@ -52,4 +61,3 @@ if granule_list and len(granule_list) >= 1:
         # Save file again
         gedi_out_filename = 'VDATUM_' + os.path.basename(granule)
         granule_df.to_file(os.path.join(gedi_dir, gedi_out_filename))
-        

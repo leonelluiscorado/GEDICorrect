@@ -6,8 +6,16 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr, linregress
 from sklearn.metrics import root_mean_squared_error, mean_absolute_error
+import argparse
 
-our_filespath = "/home/leonel/GEDICORRECT-2/out_beam_kl+rh"
+parser = argparse.ArgumentParser(description='An auxiliary script to calculate evaluating metrics between corrected and original \
+                                              GEDI footprints, comparing RH95.')
+
+parser.add_argument('--result_dir', required=True, help='Path directory to correct GEDI files.', type=str)
+
+args = parser.parse_args()
+
+result_dir = args.result_dir
 
 def rmspe(y_pred, y_true):
     percentage_errors = (y_true - y_pred) / y_true
@@ -65,7 +73,11 @@ def create_beautiful_scatterplot(df, title, out_file=None):
     # Show the plot
     plt.show()
 
-files = [f for f in os.listdir(our_filespath) if f.endswith(".shp") or f.endswith(".gpkg")]
+files = [f for f in os.listdir(result_dir) if f.endswith(".shp") or f.endswith(".gpkg")]
+
+if not len(files):
+    print("Input directory is empty.")
+    exit()
 
 main_df = []
 
@@ -88,4 +100,4 @@ print("Test RMSE: ", rmse)
 print("Test MAE :", mae)
 print("-------------------------")
 
-create_beautiful_scatterplot(joined_df, title="Beam Level - KL + RH Distance - Area 3", out_file="plot_beam_area3_kl+rh.png")
+create_beautiful_scatterplot(joined_df, title="Beam Level - KL + RH Distance - Area 3", out_file=os.path.join(result_dir, "plot.png"))

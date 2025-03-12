@@ -1,12 +1,21 @@
 import geopandas as gpd
 import os
 import pandas as pd
+import argparse
 
-#gpd.read_file("", engine='pyogrio')
+parser = argparse.ArgumentParser(description='An auxiliary script to merge separate GEDI L1B and L2A data products. \
+                                              This operation is required for GEDICorrect to work. It also applies \
+                                              additional filtering for GEDI footprints.')
 
-l1b_dir = "/home/yoru/personal/GEDI-Pipeline/GEDI-Pipeline/FUELSAT_TEST"
-l2a_dir = "/home/yoru/personal/GEDI-Pipeline/GEDI-Pipeline/FUELSAT_TEST_L2A"
-out_dir = "./senstest"
+parser.add_argument('--l1b_dir', required=True, help='Path directory of L1B GEDI files', type=str)
+parser.add_argument('--l2a_dir', required=True, help='Path directory of L2A GEDI files', type=str)
+parser.add_argument('--out_dir', required=True, help='Output directory to put merged GEDI files.', type=str)
+
+args = parser.parse_args()
+
+l1b_dir = args.l1b_dir
+l2a_dir = args.l2a_dir
+out_dir = args.out_dir
 
 l1b_files = [f for f in os.listdir(l1b_dir) if f.endswith(".gpkg")]
 l2a_files = [f for f in os.listdir(l2a_dir) if f.endswith(".gpkg")]
@@ -41,19 +50,25 @@ for file in l1b_files:
 
     merged_df = pd.merge(l1b_file, l2a_file_to_merge, left_on='shot_number_x', right_on=[sn for sn in l2a_file_to_merge.columns if sn.endswith('shot_number')][0])
 
-    final_df = merged_df.query('degrade_flag == 0 and quality_flag == 1')
+    ### GEDI recommended filtering conditions
 
-    #final_df = merged_df.query('sensitivity < 0.9')
-    #merged_df = merged_df.query('solar_elevation < 0')
+    merged_df = merged_df.query('degrade_flag == 0 and quality_flag == 1')
 
-    #merged_df = merged_df.query('rh_95 <= 30')
-    #merged_df = merged_df.query('rh_95 > 10 and num_detectedmodes == 1')
-    #final_df = merged_df[~((merged_df['rh_95'] > 10) & (merged_df['num_detectedmodes'] == 1))]
-    #final_df = merged_df.loc[~((merged_df['rh_98'] > 5) & (merged_df['num_detectedmodes'] == 1))] # ~((df['col1'] == 'A') | (df['col2'] > 6))
+    merged_df = merged_df.query('sensitivity >= 0.9')
 
-    if len(final_df) < 1:
+    merged_df = merged_df.query('solar_elevation < 0')
+
+    ## GEDICorrect recommended filters
+
+    merged_df = merged_df.query('rh_95 <= 30')
+
+    merged_df = merged_df[~((merged_df['rh_95'] > 10) & (merged_df['num_detectedmodes'] == 1))]
+
+    if len(merged_df) < 1:
         print(f"Filtered merged df {file} is empty, skipping")
         continue
 
     print("Saving ", file)
-    final_df.to_file(os.path.join(out_dir, file), driver="GPKG")
+    merged_df.to_file(os.path.join(out_dir, file), driver="GPKG")
+
+    del merged_df, l1b_file, l2a_file

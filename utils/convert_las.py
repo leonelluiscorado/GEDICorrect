@@ -1,17 +1,22 @@
 import sys
 import traceback
-#import pylas
 import laspy
 import os
-try:
-    print('Running LAZ_to_LAS.py')
-    
+import argparse
+
+parser = argparse.ArgumentParser(description='An auxiliary script to convert .laz files to .las (required by GEDICorrect).')
+
+parser.add_argument('--las_dir', required=True, help='Local directory of .laz files to convert.', type=str)
+
+args = parser.parse_args()
+
+in_dir = args.las_dir
+
+try:    
     def convert_laz_to_las(in_laz, out_las):
         las = laspy.read(in_laz)
         las = laspy.convert(las)
         las.write(out_las)        
-    
-    in_dir = '/home/yoru/ALS_AREA_1_DGT'
     
     for (dirpath, dirnames, filenames) in os.walk(in_dir):
         for inFile in filenames:
@@ -22,7 +27,7 @@ try:
                 print('working on file: ',out_las)
                 convert_laz_to_las(in_laz, out_las)
                              
-    print('Finished without errors - LAZ_to_LAS.py')
+    print('Finished without errors - LAZ to LAS')
 except:
     tb = sys.exc_info()[2]
     tbinfo = traceback.format_tb(tb)[0]

@@ -1,14 +1,21 @@
-## Convert gpkg to .h5
+## Convert GEDI .gpkg to .h5
 
 import tables
 import geopandas as gpd
 import os
+import argparse
 
-#file = "/home/yoru/Desktop/GEDI01_B_2019156193255_O02717_03_T03903_02_005_01_V002.gpkg"
-files_dir = "/home/yoru/3dsmos/RAW_GEDI_DATA/GEDI01_B.V2/FUELSAT"
-all_files = [f for f in os.listdir(files_dir) if not 'h5' in f]
-out_dir = "/home/yoru/3dsmos/RAW_GEDI_DATA/GEDI01_B.V2/FUELSAT/h5"
-#file_df = gpd.read_file(file, engine='pyogrio')
+parser = argparse.ArgumentParser(description='An auxiliary script to convert GEDI GPKG files into H5.')
+
+parser.add_argument('--files_dir', required=True, help='Path directory to GEDI files that are GPKG.', type=str)
+parser.add_argument('--out_dir', required=True, help='Output directory to save H5 files.', type=str)
+
+args = parser.parse_args()
+
+files_dir = args.files_dir
+out_dir = args.out_dir
+
+all_files = [f for f in os.listdir(files_dir) if f.endswith(".gpkg")]
 
 groups = ['BEAM0000', 'BEAM0001', 'BEAM0010', 'BEAM0011', 'BEAM0101', 'BEAM0110', 'BEAM1000', 'BEAM1011']
 
