@@ -17,7 +17,7 @@ from .data_process import parse_txt, parse_simulated_h5
 def init_random_seed():
     """
     Initializes a random seed for each multiprocessing process. This works to ensure
-    that no other worker process shares the inherited seed from the parent process
+    that no other worker process shares the inherited seed from the parent process.
     """
     seed = multiprocessing.current_process().pid  # Use process ID as the seed
     np.random.seed(seed)
@@ -25,8 +25,19 @@ def init_random_seed():
 
 def generate_random_points(centroid_x, centroid_y, num_points, max_radius=12.5, min_dist=1.0):
     """
-    Generates a random number of ***num_points*** points around (x,y) coordinates up to a
-    ***max_radius*** distance, at ***min_dist*** intervals between generated points.
+    Generates a random number of 'num_points' points around (x,y) coordinates of a footprint
+     up to a 'max_radius' distance, at 'min_dist' intervals between generated points.
+
+    Args:
+        centroid_x (float): X coordinate of footprint's centroid.
+        centroid_y (float): Y coordinate of footprint's centroid.
+        num_points (int): Number of points to simulate around original footprint.
+        max_radius (float): Maximum radius distance to place points.
+        min_dist (float): Minimum distance between each simulated point.
+
+    Returns:
+        points (list): A list of Point objects (with x,y coordinates) which represent the points
+                       around each footprint's centroid.
     """
     centroid = Point(centroid_x, centroid_y)
     
@@ -57,12 +68,29 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
                            num_points=None,
                            max_radius=12.5,
                            min_dist=1.0,
-                           simulate_original=True):
+                           simulate_original=False):
     '''
-    Core of GEDI Simulation footprints.
-    1 - Generates points around footprint centroid
-    2 - Runs the desired simulations from GediRat and GediMetrics from GEDI Simulator
-    3 - Parses and processes the output of the simulations to be returned
+    Core of GEDI Simulation footprints (Simulation Unit).
+    1 - Generates points around footprint centroid (Random or Grid);
+    2 - Runs the desired simulations from GediRat and GediMetrics from GEDI Simulator;
+    3 - Parses and processes the output of the simulations to be returned;
+    4 - Applies a filtering step to ensure correct simulations pass to the Scoring Unit.
+
+    The final output is a DataFrame with all simulated footprints around the input 'footprint'.
+    The output of the GEDI Simulator programs are supressed.
+
+    Args:
+        footprint (DataFrame): Single original footprint to simulate and additional info.
+        temp_dir (TemporaryDirectory): A temporary directory to keep information
+                                       and I/O operations during simulation
+        las_dir (str): Directory where .las files are located.
+        original_df (DataFrame): The original DataFrame of input footprint GEDI orbit.
+        crs (pyproj.CRS): Coordinate Reference System to be used in simulation.
+        grid (list): A list of all possible offsets of the given grid (Valid for Orbit-Level or Beam-Level).
+        num_points (int): Number of points to simulate around original footprint.
+        max_radius (float): Maximum radius distance to place points.
+        min_dist (float): Minimum distance between each simulated point.
+        simulate_original (bool): Flag to simulate footprint at original position or not.
     '''
 
     idx = multiprocessing.current_process().pid   # Get current process unique id
@@ -81,6 +109,9 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
     ## Generate txt list of coordinates from a grid
     if grid:
         with open(os.path.join(temp_dir, f"points_test_{idx}.txt"), "w") as f:
+            if simulate_original:
+                f.write(f"{footprint['geometry'].x} {footprint['geometry'].y}\n") # Write original footprint position as first point
+                num_points += 1  # Additional point
             for offset in grid:
                 offset_x = footprint['geometry'].x + offset[0]
                 offset_y = footprint['geometry'].y + offset[1]
@@ -126,8 +157,10 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
         all_df['grid_offset'] = grid
 
     # Filter out special case footprints
+    if grid and simulate_original:
+        grid_size = len(grid) + 1
 
-    if grid and len(all_df) < len(grid):
+    if grid and len(all_df) < grid_size:
         # Did not simulate all points, discard
         return []
     

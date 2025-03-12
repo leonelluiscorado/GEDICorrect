@@ -15,6 +15,7 @@ from .metric import *
 import matplotlib.pyplot as plt
 import matplotlib
 
+# AVAILABLE FRAMEWORK CRITERIA
 possible_criteria = ['wave_pearson', 'wave_spearman', 'wave_distance', 'kl', 'rh_distance', 'terrain']
 
 class CorrectionScorer:
@@ -40,23 +41,40 @@ class CorrectionScorer:
         self.set_criteria(criteria)
 
         # Debug
-        self.debug = True
+        self.debug = False
 
     def set_criteria(self, criteria):
         """
         Setter function for criteria.
+
+        Args:
+            criteria (list): A list of selected criteria to score similarities between simulations.
+
+        Raises:
+            ValueError: Whenever it does not recognize an input criterion.
         """
         try:
             self.criteria = self._parse_criteria(criteria)
         except:
-            print(f"[Correction] Criterion {criteria} not valid. Please select between [rh , rh_correlation , wave , terrain]. Only one correlation method can be choosed.")
             self.criteria = []
+            raise ValueError(f"[Correction] Criterion {criteria} not valid. Please select  \
+                              between ['wave_pearson', 'wave_spearman', 'wave_distance', \
+                              'kl', 'rh_distance', 'terrain']. Only one correlation method can be choosed.")
 
     def _parse_criteria(self, criteria):
         """
         Parses criteria variable string into a list of options.
 
-        Example argument would be: criteria = "rh rh_correlation wave"
+        Args:
+            criteria (str): A string containing all input criteria to calculate similarity scores
+                            if multiple are selected, they must be separated by " " (space).
+
+        Returns:
+            criteria (list): Parsed list of criteria from a string.
+
+        Raises:
+            ValueError: Whenever user inputs an invalid criteria or selects both correlation methods.
+
         """
         if criteria == 'all':
             return possible_criteria
@@ -69,15 +87,22 @@ class CorrectionScorer:
         
         # Both correlations cannot be chosen
         if "wave_pearson" in criteria and "wave_spearman" in criteria:
-            raise ValueError
+            raise ValueError("Invalid Correlation criteria. Choose one between 'wave_pearson' or 'wave_spearman'.")
 
         return criteria
 
 
     def score(self, sim_footprints):
         """
-        Scores a list of simulated footprints that align with the original footprint shot_number from the original_df and calculates
-        from selected criteria at class creation
+        Scores a list of simulated footprints that align with the original footprint shot_number from the
+        original_df and calculates similarity scores with selected criteria.
+
+        Args:
+            sim_footprints (DataFrame): Dataframe of simulated footprints (output of Simulation)
+
+        Returns:
+            sim_footprints (DataFrame): The input dataframe with scores appended as columns. If it fails
+                                        to score, it returns an empty list instead.
         """
 
         # Do not score invalid simulated footprints
@@ -151,9 +176,15 @@ class CorrectionScorer:
     def _rh_distance(self, original, simulated):
         """
         Calculates the Relative Height Metrics between the simulated and original footprints.
-        Matching is calculated with:
-        - All RH columns distance at heights ['25', '50', '60', '70', '75', '80', '85', '90', '95', '98', '100']
-          using sqrt( sum( (real_x, sim_x)**2 ) )
+        Matching is calculated with all RH columns distance at heights 
+        ['25', '50', '60', '70', '75', '80', '85', '90', '95', '98', '100'] using CRSSDA.
+
+        Args:
+            original (DataFrame): Single original footprint to compare with simulated
+            simulated (DataFrame): Dataframe of all simulated footprints around original footprint
+
+        Returns:
+            simulated (DataFrame) : The input dataframe with RH CRSSDA column appended.
         """
         rh_col_types = [f'{i}' for i in range(25, 105, 5)]
 
@@ -175,8 +206,16 @@ class CorrectionScorer:
 
     def _terrain_matching(self, original, simulated):
         """
-        Calculates the difference between each calculated ground elevation from the simulated and original footprints
-        Checks which 'ground' or 'product' variable to calculate the difference from at class creation
+        Calculates the difference between each calculated ground elevation (AGED)
+        from the simulated and original footprints. Checks which 'ground' or 'product' variable
+        to calculate the difference from at class creation.
+
+        Args:
+            original (DataFrame): Single original footprint to compare with simulated
+            simulated (DataFrame): Dataframe of all simulated footprints around original footprint
+
+        Returns:
+            simulated (DataFrame) : The input dataframe with RH CRSSDA column appended.
         """
 
         if self.ground == 'GEDI':
@@ -187,6 +226,7 @@ class CorrectionScorer:
             # Terrain Matching L2A_2 : GEDI L2A Lowest_Mode - true_ground (ALS)
             simulated_terrain = simulated['true_ground']
 
+        # Calculate AGED
         simulated['terrain_matching'] = AGED(original['elev_lowestmode'].values, simulated_terrain)
 
         if self.add_info:
@@ -197,6 +237,17 @@ class CorrectionScorer:
 
     def _waveform_matching(self, original, simulated):
         """
+        Calculates similarity scores for Waveform Matching method, including
+        correlation-based, distance-based and divergence-based criteria.
+        (Pearson; Spearman; CRSSDA; KL Divergence). If 'debug' is active,
+        it plots all simulation waveforms for a certain footprint shot number (specified by user).
+
+        Args:
+            original (DataFrame): Single original footprint to compare with simulated
+            simulated (DataFrame): Dataframe of all simulated footprints around original footprint
+
+        Returns:
+            simulated (DataFrame) : The input dataframe with Waveform Matching score column(s) appended.
         """
 
         original_rxwaveform = [float(x) for x in original['rxwaveform'].values[0].split(",")]
@@ -260,14 +311,7 @@ class CorrectionScorer:
                                             ori_wave_interp,
                                             common_z,
                                             common_z,
-                                            f"{original['shot_number_x'].values[0]}-ID_{sim_point['wave_ID']}",
-                                            0,
-                                            0,
-                                            0,
-                                            0,
-                                            0,
-                                            0,
-                                            0)
+                                            f"{original['shot_number_x'].values[0]}-ID_{sim_point['wave_ID']}")
                 
 
         if correlations:
@@ -286,41 +330,61 @@ class CorrectionScorer:
         return simulated
 
 
-    def _calculate_score(self, footprint):
+    def _calculate_score(self, sim_footprints):
         """
         Calculates a final score between 0 and 1 of all selected criteria.
         Before adding to final score, the "_matching" or "_correlation" criteria are normalized between 0 and 1.
+        The final score is an average of all selected criteria (if multiple criteria are selected).
+
+        Args:
+            sim_footprints (DataFrame): A dataframe of all simulated footprints, with matching columns
+                                        appended.
+        
+        Returns:
+            scores (DataFrame): The final_score column to be appended to output DataFrame.
         """
         add_score = 0
 
         for criterion in self.criteria:
             if criterion == 'wave_pearson' or criterion == 'wave_spearman':
-                add_score += self._normalize_correl(footprint['waveform_matching'])
+                add_score += self._normalize_correl(sim_footprints['waveform_matching'])
 
             if criterion == 'rh_distance':
-                add_score += self._normalize(footprint['rh_distance'].abs())
+                add_score += self._normalize(sim_footprints['rh_distance'].abs())
 
             if criterion == 'wave_distance':
-                add_score += self._normalize(footprint['waveform_distance'])
+                add_score += self._normalize(sim_footprints['waveform_distance'])
 
             if criterion == "kl":
-                add_score += self._normalize(footprint['kl_distance'])
+                add_score += self._normalize(sim_footprints['kl_distance'])
 
             if criterion == 'terrain':
-                add_score += self._normalize(footprint['terrain_matching'].abs())
+                add_score += self._normalize(sim_footprints['terrain_matching'].abs())
 
-        scores = add_score / len(self.criteria)  # Final Score calculation
+        scores = add_score / len(self.criteria)  # Final Score calculation, Average
 
         return scores
 
     def _normalize(self, column):
         """
-        Normalizes column in abs()
+        Normalizes column in abs().
+
+        Args:
+            column (DataFrame): Column of values.
+
+        Returns:
+            DataFrame: Normalized column of values.
         """
         return 1 - ((column - column.min()) / (column.max() - column.min()))
         
     def _normalize_correl(self, column):
         """
-        Normalizes column of correlation
+        Normalizes column of correlation.
+
+        Args:
+            column (DataFrame): Column of correlations
+
+        Returns:
+            DataFrame: Normalized column of correlations.
         """
         return (column - column.min()) / (column.max() - column.min())

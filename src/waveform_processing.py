@@ -1,5 +1,5 @@
 """
-Helper script with waveform data processing and normalization functions
+Helper functions with waveform data processing and normalization functions
 Also includes Plotting function
 """
 
@@ -10,7 +10,13 @@ from scipy.interpolate import interp1d
 
 def normalize_waveform(wave):
     """
-    Normalizes a waveform from 0 to 1
+    Normalizes a waveform from 0 to 1.
+
+    Args:
+        wave (array-like): Waveform.
+
+    Returns:
+        normalized (array-like): Normalized waveform.
     """
     total = np.sum(wave)
     normalized = wave / total
@@ -19,7 +25,16 @@ def normalize_waveform(wave):
 
 def adjust_waveforms(gedi_wave, sim_wave, nbins):
     """
-    Normalizes both GEDI and Simulated waveforms
+    Adjusts both GEDI and Simulated waveforms from gediRat.
+
+    Args:
+        gedi_wave (list): Original GEDI waveform.
+        sim_wave (list): Simulated GEDI waveform.
+        nbins (int): Number of bins of both waveforms.
+
+    Returns:
+        adjusted_gedi (array-like): Parsed and processed original GEDI waveform.
+        adjusted_simulated (array-like): Parsed and processed simulated GEDI waveform.
     """
     gedi_wave = np.array(gedi_wave)
     sim_wave = np.array(sim_wave)
@@ -40,6 +55,16 @@ def interpolate_waveforms(original_wave, original_z, simulated_wave, simulated_z
     """
     Interpolates waveforms to a common Z (ground). By aligning both waveforms in terms of ground return,
     they become directly comparable, both original waveforms and simulated waveforms.
+
+    Args:
+        original_wave (array-like): Original GEDI waveform.
+        original_z (array-like): Original GEDI Z-array (elevation_lastbin to elevation_bin0).
+        simulated_wave (array-like): Simulated GEDI waveform.
+        simulated_z (array-like): Simulated GEDI Z-array (elevation_lastbin to elevation_bin0).
+
+    Returns:
+        ori_wave_interp (array-like): Interpolated original GEDI waveform.
+        sim_wave_interp (array-like): Interpolated simulated GEDI waveform.
     """
     # Interpolate both waveforms to a common Z
     common_z = np.sort(np.unique(np.concatenate((simulated_z, original_z))))
@@ -53,9 +78,20 @@ def interpolate_waveforms(original_wave, original_z, simulated_wave, simulated_z
     return ori_wave_interp, sim_wave_interp
 
 
-def find_simulated_waveform_bounds(waveform, threshold, return_indices=False):
+def find_simulated_waveform_bounds(waveform, threshold=6.68*0.0001, return_indices=False):
     """
-    Returns the start and end bounds of given waveform values that are above a **threshold**
+    Returns the start and end bounds of given waveform values that are above a 'threshold'.
+    For GEDI, this threshold is 6.68*0.0001 (Hancock et al. 2019).
+
+    Args:
+        waveform (array-like): GEDI waveform.
+        threshold (float): Limit to check bounds.
+        return_indices (bool): Flag to return indices above threshold.
+
+    Returns
+        start_bound (int): Index of start of waveform above threshold.
+        end_bound (int): Index of end of waveform above threshold.
+        indices (list): (return_indices = True) Indices of each element above threshold.
     """
     start_bound = next((i for i, x in enumerate(waveform) if x > threshold), None)
     end_bound = next((i for i, x in enumerate(reversed(waveform)) if x > threshold), None)
@@ -73,7 +109,9 @@ def find_simulated_waveform_bounds(waveform, threshold, return_indices=False):
 
 def align_simulated_gedi(original_rxwaveform, sim_rxwaveform, sim_bounds, original_z, sim_z):
     """
-    Aligns different sized Z arrays between original and simulated waveforms
+    NOT USED.
+
+    Aligns different sized Z arrays between original and simulated waveforms.
     """
     sim_z_bounds = sim_z[sim_bounds[0]:sim_bounds[1]]
 
@@ -91,16 +129,21 @@ def align_simulated_gedi(original_rxwaveform, sim_rxwaveform, sim_bounds, origin
     return original_rxwaveform[gedi_arr_end:gedi_arr_start+indices_to_add], sim_rxwaveform[sim_bounds[0]:sim_bounds[1]]
 
 
-def kl_divergence(original_wave, sim_wave):
-    original_wave = np.where(original_wave <= 0, 0.0000000001, original_wave)
-    sim_wave = np.where(sim_wave <= 0, 0.0000000001, sim_wave)
-    kl = entropy(original_wave, sim_wave)
-    return kl
-
-
-def plot_waveform_comparison(sim_wave, gedi_wave, sim_z, gedi_z, out_filename, r, alignment, original_rh, sim_rh, bounds, rh_bounds, rh_heights, point=None):
+def plot_waveform_comparison(sim_wave, gedi_wave, sim_z, gedi_z, out_filename):
     """
-    Plots the Original and Simulated Waveforms for debugging purposes
+    Plots the Original and Simulated Waveforms for debugging purposes.
+    Outputs at 600 dpi to 'out_filename'.
+
+    Args:
+        sim_wave (array-like): Simulated GEDI waveform.
+        gedi_wave (array-like): Original GEDI waveform.
+        sim_z (array-like): Simulated GEDI Z-array (elevation_lastbin to elevation_bin0).
+        gedi_z (array-like): Original GEDI Z-array (elevation_lastbin to elevation_bin0).
+        out_filename (str): Plot output filename.
+
+    Returns:
+        True: if plotted successfully.
+
     """
 
     xmax = max(max(gedi_wave), max(sim_wave)) + 10
@@ -109,11 +152,6 @@ def plot_waveform_comparison(sim_wave, gedi_wave, sim_z, gedi_z, out_filename, r
         plt.ioff()
         plt.plot(sim_wave, sim_z, color='#196e27', label="Simulation")
         plt.plot(gedi_wave, gedi_z, color='#e71c7d', label="GEDI")
-
-        #plt.hlines(y=rh_bounds[0], xmin=0, xmax=xmax, linewidth=1, colors='red', linestyles='--', label="ZG")
-        #plt.hlines(y=rh_bounds[1], xmin=0, xmax=xmax, linewidth=1, colors='blue', linestyles='--', label="LOWESTMODE")
-        #plt.hlines(y=rh_heights[0], xmin=0, xmax=xmax, linewidth=1, colors='black', linestyles='--', label="RhSim")
-        #plt.hlines(y=rh_heights[1], xmin=0, xmax=xmax, linewidth=1, colors='grey', linestyles='--', label="RhOrigin")
 
         plt.legend(loc='lower right')
         plt.xlim(left=-5)
