@@ -82,3 +82,6 @@ Check out our other repository ![GEDI-Pipeline](https://github.com/leonelluiscor
 
 Corado, L., Godinho, S. (2025) GEDICorrect: A Python Framework for GEDI Geolocation Correction at the Orbit, Beam or Footprint-Level Using Multiple Criteria and Parallel Processing Methods. version 1.0.0, available at: https://github.com/leonelluiscorado/GEDICorrect
 
+### Funding
+
+This work was conducted within the framework of the GEDI4SMOS project (Combining LiDAR, radar, and multispectral data to characterize the three-dimensional structure of vegetation and produce land cover maps), financially supported by the Directorate-General for Territory (DGT) with funds from the Recovery and Resilience Plan (Investimento RE-C08-i02: Cadastro da Propriedade Rústica e Sistema de Monitorização da Ocupação do Solo).
