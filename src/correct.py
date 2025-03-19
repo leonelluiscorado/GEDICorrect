@@ -334,7 +334,6 @@ class GEDICorrect:
             out_df.to_file(os.path.join(self.out_dir, 'CORRECTED_'+out_filename))
 
 
-
     def _footprint_simulate(self, num_points=100, max_radius=12.5, min_dist=1.0):
         '''
         Simulates and Scores at the footprint-level all of the input GEDI granules.
@@ -355,7 +354,7 @@ class GEDICorrect:
         for filename, footprint_df in self.gedi_granules.items():
             print(f"[Simulate] Correcting granule {filename}")
 
-            scorer = CorrectionScorer(original_df=footprint_df) # Define Scorer
+            scorer = CorrectionScorer(original_df=footprint_df, criteria=self.criteria) # Define Scorer
             footprints = [row for i, row in footprint_df.iterrows()]
             processed_fpts = []
             results = []
