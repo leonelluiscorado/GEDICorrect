@@ -1,8 +1,32 @@
 #!/bin/bash -f
 
-HOMDIR="$HOME"
+HOMDIR="$(pwd)/C-dependencies"
 
-# set up environment variables
+mkdir -p "$HOMDIR"
+
+# Detect Linux distribution (WIP - Install dependencies based on distribution)
+OS=$(lsb_release -is 2>/dev/null || source /etc/os-release && echo $ID)
+
+# Install dependencies based on OS
+echo "Detected OS: $OS"
+if [[ "$OS" =~ (Ubuntu|Debian) ]]; then
+    sudo apt update
+    sudo apt install -y git make gcc g++ hdf5-tools libhdf5-dev libgsl-dev csh wget
+else
+    exit 1
+fi
+
+# Detect HDF5 installation path
+HDF5_PATH=$(find /usr -name "libhdf5.so*" 2>/dev/null | head -n 1)
+
+if [[ -n "$HDF5_PATH" ]]; then
+    echo "HDF5 library found at: $HDF5_PATH"
+else
+    echo "Error: HDF5 library not found!" >&2
+    exit 1
+fi
+
+# Set up environment variables
 export ARCH=`uname -m`
 export PATH=$PATH:./:$HOMDIR/bin/$ARCH:$HOMDIR/bin/csh
 export GEDIRAT_ROOT=$HOMDIR/src/gedisimulator
@@ -10,34 +34,28 @@ export CMPFIT_ROOT=$HOMDIR/src/cmpfit-1.2
 export GSL_ROOT=/usr/local/lib
 export LIBCLIDAR_ROOT=$HOMDIR/src/libclidar
 export HANCOCKTOOLS_ROOT=$HOMDIR/src/tools
-export HDF5_LIB=/usr/lib/x86_64-linux-gnu
+export HDF5_LIB=$(dirname $HDF5_PATH)
 
-envFile="$HOMDIR/.bashrc"
-echo "export ARCH=`uname -m`" >> $envFile
-echo "export PATH=$PATH:./:$HOMDIR/bin/$ARCH:$HOMDIR/bin/csh" >> $envFile
-echo "export GEDIRAT_ROOT=$HOMDIR/src/gedisimulator" >> $envFile
-echo "export CMPFIT_ROOT=$HOMDIR/src/cmpfit-1.2" >> $envFile
-echo "export GSL_ROOT=/usr/local/lib" >> $envFile
-echo "export LIBCLIDAR_ROOT=$HOMDIR/src/libclidar" >> $envFile
-echo "export HANCOCKTOOLS_ROOT=$HOMDIR/src/tools" >> $envFile
-echo "export HDF5_LIB=/usr/lib/x86_64-linux-gnu" >> $envFile
+# Persist environment variables
+envFile="$HOME/.bashrc"
+{
+    echo "export ARCH=$(uname -m)"
+    echo "export PATH=$PATH:./:$HOMDIR/bin/$ARCH:$HOMDIR/bin/csh"
+    echo "export GEDIRAT_ROOT=$GEDIRAT_ROOT"
+    echo "export CMPFIT_ROOT=$CMPFIT_ROOT"
+    echo "export GSL_ROOT=$GSL_ROOT"
+    echo "export LIBCLIDAR_ROOT=$LIBCLIDAR_ROOT"
+    echo "export HANCOCKTOOLS_ROOT=$HANCOCKTOOLS_ROOT"
+    echo "export HDF5_LIB=$HDF5_LIB"
+} >> "$envFile"
 
-# set up directory structure
-if [ ! -e $HOMDIR/src ];then
-  mkdir $HOMDIR/src
-fi
-if [ ! -e $HOMDIR/bin ];then
-  mkdir $HOMDIR/bin
-fi
-if [ ! -e $HOMDIR/bin/$ARCH ];then
-  mkdir $HOMDIR/bin/$ARCH
-fi
-if [ ! -e $HOMDIR/bin/csh ];then
-  mkdir $HOMDIR/bin/csh
-fi
+source "$HOME/.bashrc"
+
+# Set up directory structure
+mkdir -p "$HOMDIR/src" "$HOMDIR/bin" "$HOMDIR/bin/$ARCH" "$HOMDIR/bin/csh"
 
 pushd $HOMDIR/src
-wget https://www.physics.wisc.edu/~craigm/idl/down/cmpfit-1.2.tar.gz
+wget --show-progress https://www.physics.wisc.edu/~craigm/idl/down/cmpfit-1.2.tar.gz
 tar -xvf cmpfit-1.2.tar.gz
 popd
 
@@ -45,7 +63,6 @@ pushd $HOMDIR/src
 git clone https://bitbucket.org/StevenHancock/libclidar
 git clone https://bitbucket.org/StevenHancock/tools
 git clone https://bitbucket.org/StevenHancock/gedisimulator
-
 
 programList="gediRat gediMetric mapLidar collocateWaves lasPoints fitTXpulse"
 cd $GEDIRAT_ROOT/
@@ -60,8 +77,5 @@ programList="gediRatList.csh listGediWaves.csh overlapLasFiles.csh filtForR.csh"
 for program in $cshList;do
   cp $program $HOMDIR/bin/csh/
 done
-
-#cp *.csh $HOMDIR/src/csh/
-#cp *.bash $HOMDIR/src/csh/
 
 popd
