@@ -19,12 +19,18 @@ By addressing critical barriers in geolocation correction with an open-source, u
 - GCC: 11.4 or later (to install ![GEDI Simulator](https://bitbucket.org/StevenHancock/gedisimulator/src/master/))
 - Python: 3.11 or later
 - Anaconda: 23.11.0 or 24.4.0 or later
-- OS: Ubuntu only (Windows support is in development)
+- OS: Linux or Windows WSL (Ubuntu)
 
 **Installation Steps**:
+
+Always keep a copy of the most recent update of GEDICorrect, to ensure it functionality.
+
+For Windows Users:
+- GEDICorrect Support for Windows (natively) is currently unsupported, however, it provides Windows Subsystem for Linux (WSL) in the most recent versions of Windows (10 or 11). Before installing GEDICorrect, it is recommended that you install the ![Ubuntu WSL](https://learn.microsoft.com/en-us/windows/wsl/install). After following the instructions, start your Ubuntu subsystem and follow the subsequent steps inside the virtual machine.
+
 1. Clone the repository. Navigate to the cloned repository's directory.
 2. Execute the Bash script `install_hancock_tools.bash` located in the root directory of the repository. This script will install GEDI Simulator and all the necessary dependencies to perform GEDI waveform simulations. To execute it, first give it executable permissions with `chmod +x install_hancock_tools.bash` and then execute it with `./install_hancock_tools`.
-3. After installing GEDI Simulator, setup the Anaconda virtual environment (must have Anaconda installed first) for this repository by installing its required dependencies using the provided `environment.yml` with `conda env create -f environment.yml`.
+3. After installing GEDI Simulator, setup the Anaconda virtual environment (must have ![Anaconda](https://www.anaconda.com/docs/getting-started/anaconda/install) installed first) for this repository by installing its required dependencies using the provided `environment.yml` with `conda env create -f environment.yml`.
 4. Activate the virtual environment with `conda activate GEDICorrect`. You're set up!
 
 ## Getting Started
