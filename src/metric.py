@@ -3,7 +3,7 @@ Helper functions that calculate metrics for waveform similarity between original
 """
 
 from .waveform_processing import *
-from scipy.stats import pearsonr, spearmanr, norm, ecdf
+from scipy.stats import pearsonr, spearmanr, entropy
 import math
 
 def pearson_correlation(original_wave, simulated_wave):
@@ -58,7 +58,7 @@ def CRSSDA(original_array, simulated_array):
 def KL(original_wave, simulated_wave):
     """
     Calculates the Kullback-Leibler Divergence between
-    two probabilistic functions.
+    two probabilistic functions using entropy().
 
     Args:
         original_wave (array_like): Original waveform of reported footprint.
@@ -71,7 +71,10 @@ def KL(original_wave, simulated_wave):
     normed_ori_wave = normalize_waveform(original_wave) 
     normed_sim_wave = normalize_waveform(simulated_wave)
 
-    kl_score = kl_divergence(normed_ori_wave, normed_sim_wave)
+    original_wave = np.where(normed_ori_wave <= 0, 0.0000000001, normed_ori_wave)
+    sim_wave = np.where(normed_sim_wave <= 0, 0.0000000001, normed_sim_wave)
+    kl_score = entropy(original_wave, sim_wave)
+
     return kl_score
 
 

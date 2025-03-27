@@ -136,6 +136,12 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
 
     ## Simulate waveforms
     exit_code = subprocess.run(["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", "3763", "-ground", "-maxBins", nbins, "-output", h5_file_dir], stdout=subprocess.DEVNULL)
+
+    ## Check if footprint simulated:
+    if not os.path.exists(h5_file_dir):
+        # if footprint did not simulate correctly, for some reason, ignore it
+        return []
+
     exit_code = subprocess.run(["gediMetric", "-input", h5_file_dir, "-readHDFgedi", "-ground", "-varScale", "3.5", "-sWidth", "0.8", "-rhRes", "1", "-laiRes", "5", "-outRoot", metric_outroot], stdout=subprocess.DEVNULL)
     
     ## Handle each output

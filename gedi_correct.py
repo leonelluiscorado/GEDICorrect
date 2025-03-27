@@ -70,8 +70,8 @@ correct = GEDICorrect(granule_list=input_granules,
                       n_processes=args.n_processes)
 
 if args.mode == "footprint":
-    results = correct.simulate(args.n_points, args.radius, args.min_dist)
+    results = correct.simulate(n_points=args.n_points, max_radius=args.radius, min_dist=args.min_dist)
 else:
-    results = correct.simulate(args.grid_size, args.grid_step)
+    results = correct.simulate(grid_size=args.grid_size, grid_step=args.grid_step)
 
 print(f"[Correction] Correction of input footprints complete! All files have been saved to {args.out_dir}")
