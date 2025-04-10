@@ -3,7 +3,8 @@ Helper functions that calculate metrics for waveform similarity between original
 """
 
 from .waveform_processing import *
-from scipy.stats import pearsonr, spearmanr, entropy
+from scipy.stats import pearsonr, spearmanr, entropy, linregress
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 import math
 
 def pearson_correlation(original_wave, simulated_wave):

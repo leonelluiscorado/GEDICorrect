@@ -2,6 +2,8 @@ import os
 import argparse
 
 from src.correct import GEDICorrect
+from src.waveform_processing import create_beautiful_scatterplot
+from src.metric import *
 
 # --------------------------COMMAND LINE ARGUMENTS AND ERROR HANDLING---------------------------- #
 # Set up argument and error handling
@@ -75,3 +77,36 @@ else:
     results = correct.simulate(grid_size=args.grid_size, grid_step=args.grid_step)
 
 print(f"[Correction] Correction of input footprints complete! All files have been saved to {args.out_dir}")
+
+# ----------- Calculate results (RH95 reported vs RH95 simulated) ---------------- #
+
+print(f"[Result] Calculating results from {args.out_dir}")
+
+files = [f for f in os.listdir(args.out_dir) if f.endswith(".shp") or f.endswith(".gpkg")]
+
+if not len(files):
+    print("Output directory is empty.")
+    exit()
+
+main_df = []
+
+for file in files:
+    temp_df = gpd.read_file(os.path.join(args.out_dir, file), engine='pyogrio')
+    main_df.append(temp_df)
+
+main_df = gpd.GeoDataFrame(pd.concat(main_df))
+joined_df = main_df.dropna(axis=0)
+
+r = pearsonr(joined_df['rhGauss_95'].values, joined_df['rh95'].values)
+rmse = root_mean_squared_error(joined_df['rh95'].values, joined_df['rhGauss_95'].values)
+mae = mean_absolute_error(joined_df['rh95'].values, joined_df['rhGauss_95'].values)
+rsquared_criteria = r.statistic ** 2
+
+print(f" ---   RESULTS  ---")
+print(f"N points: {len(joined_df['rhGauss_95'].values)}")
+print("Test  R2 : ", rsquared_criteria)
+print("Test RMSE: ", rmse)
+print("Test MAE :", mae)
+print("-------------------------")
+
+create_beautiful_scatterplot(joined_df, title=f"Results at {args.mode} using {args.criteria}", out_file=os.path.join(args.out_dir, "result_plot.png"))
