@@ -559,6 +559,8 @@ class GEDICorrect:
         Returns:
             None
         '''
+        score_dict = {} if not self.use_parallel else Manager().dict()
+        lock = None if not self.use_parallel else Manager().Lock() # Used to lock global variable of best offset
 
         # Iterate through each gedi file
         for filename, footprint_df in self.gedi_granules.items():
@@ -567,9 +569,6 @@ class GEDICorrect:
 
             scorer = CorrectionScorer(original_df=footprint_df, criteria=self.criteria) # Init Scorer
             offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step) # Generate grid
-
-            score_dict = {} if not self.use_parallel else Manager().dict()
-            lock = None if not self.use_parallel else Manager().Lock() # Used to lock global variable of best offset
 
             footprints = [row for i, row in footprint_df.iterrows()]
             processed_fpts = []
