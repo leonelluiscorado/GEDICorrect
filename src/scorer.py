@@ -15,6 +15,8 @@ from .metric import *
 import matplotlib.pyplot as plt
 import matplotlib
 
+from tqdm import tqdm
+
 # AVAILABLE FRAMEWORK CRITERIA
 possible_criteria = ['wave_pearson', 'wave_spearman', 'wave_distance', 'kl', 'rh_distance', 'terrain']
 
@@ -152,36 +154,39 @@ class CorrectionScorer:
         corrected_fpts = []
 
         # For each cluster
-        for main_idx, cluster_indices in cluster_dict.items():
-            score_accumulator = {}  # (x, y) offset → [list of scores]
+        with tqdm(total=len(cluster_dict), desc="Applying Clustering correction") as pbar:
+            for main_idx, cluster_indices in cluster_dict.items():
+                score_accumulator = {}  # (x, y) offset → [list of scores]
 
-            for idx in cluster_indices:
-                df = results[idx]
-                for _, row in df.iterrows():
-                    offset = row['grid_offset']
-                    score = row['final_score']
-                    shot_number = row['shot_number']
+                for idx in cluster_indices:
+                    df = results[idx]
+                    for _, row in df.iterrows():
+                        offset = row['grid_offset']
+                        score = row['final_score']
+                        shot_number = row['shot_number']
 
-                    if offset not in score_accumulator:
-                        score_accumulator[offset] = []
+                        if offset not in score_accumulator:
+                            score_accumulator[offset] = []
 
-                    score_accumulator[offset].append(score)
+                        score_accumulator[offset].append(score)
 
-            # Compute mean score for each offset
-            mean_scores = {
-                offset: sum(scores) / len(scores)
-                for offset, scores in score_accumulator.items()
-            }
+                # Compute mean score for each offset
+                mean_scores = {
+                    offset: sum(scores) / len(scores)
+                    for offset, scores in score_accumulator.items()
+                }
 
-            # Select best offset
-            best_offset = max(mean_scores.items(), key=lambda x: x[1])[0]
+                # Select best offset
+                best_offset = max(mean_scores.items(), key=lambda x: x[1])[0]
 
-            # From the main footprint’s DataFrame, select the row with this offset
-            main_df = results[main_idx]
-            corrected_row = main_df[main_df['grid_offset'] == best_offset]
+                # From the main footprint’s DataFrame, select the row with this offset
+                main_df = results[main_idx]
+                corrected_row = main_df[main_df['grid_offset'] == best_offset]
 
-            if not corrected_row.empty:
-                corrected_fpts.append(corrected_row.iloc[0])  # single row → Series
+                if not corrected_row.empty:
+                    corrected_fpts.append(corrected_row.iloc[0])  # single row → Series
+
+                pbar.update(1)
 
         # Convert list of Series back into a DataFrame
         corrected_df = gpd.GeoDataFrame(corrected_fpts, crs=self.crs, geometry='geometry')
