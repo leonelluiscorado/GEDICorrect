@@ -252,7 +252,7 @@ def parse_simulated_h5(h5_file, num_sim_points):
     return waveform_df
 
 
-def parse_txt(origin_shotnum, filename):
+def parse_txt(origin_footprint, filename):
     """
     Parses the TXT file from the gediMetrics simulation, returning a DataFrame.
 
@@ -263,6 +263,7 @@ def parse_txt(origin_shotnum, filename):
     Returns:
         df (DataFrame): The TXT file contents parsed into a DataFrame.
     """
+
     with open(filename, "r+") as text_file:
         lines = text_file.readlines()
 
@@ -281,12 +282,92 @@ def parse_txt(origin_shotnum, filename):
 
     # Rearrange ID into Shot Number and Beam
     df = pd.read_csv(filename, delimiter=' ')
-    df['shot_number'] = str(origin_shotnum)
+    df['shot_number'] = str(origin_footprint['shot_number_x'].values[0])
+    df['geolocation_delta_time'] = origin_footprint['geolocation_delta_time'].values[0]
     df['linkM'], df['linkCov'] = 0, 0
 
     # Rearrange columns
     cols = df.columns.tolist()
-    cols = cols[-2:] + cols[:-2]
+    cols = cols[-3:] + cols[:-3]
     cols = clean_cols_rh(cols)
 
     return df[cols]
+
+
+def cluster_footprints(sim_fpts, time_window=0.215):
+    '''
+    Groups footprints into clusters based on the time_window.
+
+    Args:
+        processed_fpts (list): List of Dataframes containing the simulated footprints for each input footprint
+        time_window (float): The time_window (in Hz) to calculate min and max delta_times to group footprints
+
+    Returns:
+        dict of clusters
+    '''
+
+    delta_times = []
+
+    # Grab delta times from each footprint
+    for i, fpt_list in enumerate(sim_fpts):
+        fpt_time = fpt_list.iloc[0]['geolocation_delta_time']
+        delta_times.append((i, fpt_time))
+
+    delta_times.sort(key=lambda x: x[1])
+    indices, times = zip(*delta_times)
+
+    # Initialize clusters
+    clusters = []
+    main_idx = []
+    n = len(times)
+
+    for i in range(n):
+        current_time = times[i]
+        cluster_indices = []
+
+        # Include footprints within the time window
+        for j in range(n):
+            if abs(times[j] - current_time) <= time_window:
+                cluster_indices.append(indices[j])
+
+        # Exclude clusters with only one footprint
+        if len(cluster_indices) > 1:
+            cluster = (indices[i], cluster_indices)
+            clusters.append(cluster)
+            main_idx.append(indices[i])
+
+    clusters.sort(key=lambda x: x[0])
+
+    return dict(clusters)
+
+
+def annotate_clusters(processed_fpts, cluster_dict):
+
+    for cluster_id, cluster in cluster_dict.items():
+
+        # Discard size 1 clusters
+        if len(cluster) == 1:
+            continue
+
+        # Get First and Last footprints of cluster
+        first_id, last_id = cluster[0], cluster[-1]
+
+        first_cluster_fpt = processed_fpts[first_id]
+        last_cluster_fpt = processed_fpts[last_id]
+
+        # Search (0, 0) on grid, which is the position of the original footprint
+        first_original_index = first_cluster_fpt[first_cluster_fpt['grid_offset'] == (0, 0)]
+        last_original_index = last_cluster_fpt[last_cluster_fpt['grid_offset'] == (0, 0)]
+
+        # Get latitude and longitude coordinates from the footprint (0, 0) on grid
+        lat1, lon1 = first_original_index['lat'].values[0], first_original_index['lon'].values[0]
+        lat2, lon2 = last_original_index['lat'].values[0], last_original_index['lon'].values[0]
+        cluster_bounds = ((lat1, lon1), (lat2, lon2))
+
+        for fpt in cluster:
+            df = processed_fpts[cluster_id].copy()
+            df['cluster_id'] = cluster_id
+            df['cluster_bounds'] = [cluster_bounds] * len(df)
+            processed_fpts[cluster_id] = df
+
+    return processed_fpts

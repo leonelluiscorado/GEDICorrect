@@ -145,9 +145,12 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
     exit_code = subprocess.run(["gediMetric", "-input", h5_file_dir, "-readHDFgedi", "-ground", "-varScale", "3.5", "-sWidth", "0.8", "-rhRes", "1", "-laiRes", "5", "-outRoot", metric_outroot], stdout=subprocess.DEVNULL)
     
     ## Handle each output
-    txt_df = parse_txt(footprint['shot_number_x'], metric_outroot+'.metric.txt') ######## TODO: Transform shotnumber to string and csv must display differently
+    txt_df = parse_txt(original_fpt, metric_outroot+'.metric.txt') ######## TODO: Transform shotnumber to string and csv must display differently
     try:
-        h5_df  = parse_simulated_h5(h5_file_dir, len(grid))
+        if grid:
+            h5_df  = parse_simulated_h5(h5_file_dir, len(grid))
+        else:
+            h5_df  = parse_simulated_h5(h5_file_dir, num_points)
     except ValueError as e:
         return []
 
@@ -161,6 +164,7 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
 
     if grid:
         all_df['grid_offset'] = grid
+        grid_size = len(grid)
 
     # Filter out special case footprints
     if grid and simulate_original:

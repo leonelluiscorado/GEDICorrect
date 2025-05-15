@@ -11,7 +11,7 @@ import glob
 import time
 from shapely.geometry import Point
 
-from .data_process import get_las_extents, create_buffer, find_intersecting_las_files, generate_grid
+from .data_process import *
 from .simulation import process_all_footprints, init_random_seed, process_all_footprints
 from .scorer import CorrectionScorer
 from .waveform_processing import plot_waveform_comparison
@@ -122,7 +122,7 @@ class GEDICorrect:
 
         if self.mode == "footprint":
             print("[Setup] Correcting at the FOOTPRINT LEVEL")
-            self._footprint_simulate(num_points=n_points, max_radius=max_radius, min_dist=min_dist)
+            self._footprint_simulate(grid_size=grid_size, grid_step=grid_step)
 
         # Clean Temp Dir
         del self.temp_dir
@@ -152,7 +152,7 @@ class GEDICorrect:
         # Open GEDI footprint files
         if self.granule_list and len(self.granule_list) >= 1:
             for granule in self.granule_list:
-                granule_df = gpd.read_file(granule, engine='pyogrio').to_crs("EPSG:3763") #self.crs)
+                granule_df = gpd.read_file(granule, engine='pyogrio').to_crs(self.crs)
 
                 # Check if file is empty
                 if len(granule_df) == 0:
@@ -196,7 +196,7 @@ class GEDICorrect:
         """
         return self.setup_status
 
-    def _save_outputs(self, results, filename, offset=None, beam_offset=None) -> None:
+    def _save_outputs(self, results, filename, cluster_results=None, offset=None, beam_offset=None) -> None:
         """
         Saves the output of the correction process into new files of GEDI footprints.
 
@@ -241,7 +241,9 @@ class GEDICorrect:
             for gpd_df in results:
                 if len(gpd_df) != 0:
                     # RXWAVECOUNT array to str for output purposes
-                    gpd_df['RXWAVECOUNT'] = gpd_df['RXWAVECOUNT'].astype(str)
+                    gpd_df['RXWAVECOUNT'] = gpd_df['RXWAVECOUNT'].apply(str)
+                    gpd_df['grid_offset'] = gpd_df['grid_offset'].apply(str)
+                    gpd_df['cluster_bounds'] = gpd_df['cluster_bounds'].apply(str)
 
                     save_df.append(gpd_df)
 
@@ -313,28 +315,19 @@ class GEDICorrect:
 
         else:
             # Footprint-Level mode
-            final_df = []
-            for fpt in results:
-                if len(fpt) != 0:
-                    best_footprint = fpt.sort_values(by=['final_score'], ascending=[False]).head(1).iloc[0]
-                    final_df.append(best_footprint)
-
-            if len(final_df) == 0:
-                print(f"{filename} contains footprints that are not desirable for correction.  Skipping...")
-                return
-
-            for footprint in final_df:
-                # RXWAVECOUNT array to str for output purposes
-                footprint['RXWAVECOUNT'] = str(footprint['RXWAVECOUNT'])
+            # Already selected best footprints in a geodataframe
+            cluster_results['RXWAVECOUNT'] = cluster_results['RXWAVECOUNT'].apply(str)
+            cluster_results['grid_offset'] = cluster_results['grid_offset'].apply(str)
+            cluster_results['cluster_bounds'] = cluster_results['cluster_bounds'].apply(str)
+            cluster_results.drop(columns=['FSIGMA'], inplace=True)
 
             ## Save corrected footprints to SHP
-            out_df = gpd.GeoDataFrame(final_df, crs=self.crs).set_geometry('geometry')
+            #out_df = gpd.GeoDataFrame(final_df, crs=self.crs).set_geometry('geometry')
             out_filename = filename.split('/')[-1]
-            out_df = out_df.drop(columns=['FSIGMA'])
-            out_df.to_file(os.path.join(self.out_dir, 'CORRECTED_'+out_filename))
+            cluster_results.to_file(os.path.join(self.out_dir, 'CORRECTED_'+out_filename))
 
 
-    def _footprint_simulate(self, num_points=100, max_radius=12.5, min_dist=1.0):
+    def _footprint_simulate(self, grid_size, grid_step):
         '''
         Simulates and Scores at the footprint-level all of the input GEDI granules.
         User can select parallelization. After processing every single input GEDI orbit
@@ -354,7 +347,9 @@ class GEDICorrect:
         for filename, footprint_df in self.gedi_granules.items():
             print(f"[Simulate] Correcting granule {filename}")
 
-            scorer = CorrectionScorer(original_df=footprint_df, criteria=self.criteria) # Define Scorer
+            scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria) # Define Scorer
+            offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step) # Generate grid
+
             footprints = [row for i, row in footprint_df.iterrows()]
             processed_fpts = []
             results = []
@@ -368,11 +363,10 @@ class GEDICorrect:
                     # Simulation step
                     partial_func_processing = partial(process_all_footprints,
                                                     temp_dir=self.temp_dir.name,
+                                                    las_dir=self.las_dir,
                                                     original_df=footprint_df,
                                                     crs=str(self.crs).split(":")[-1],
-                                                    num_points=num_points,
-                                                    max_radius=max_radius,
-                                                    min_dist=min_dist)
+                                                    grid=offsets)
 
                     # Scoring step
                     partial_func_correction = partial(scorer.score)
@@ -384,20 +378,32 @@ class GEDICorrect:
                             pbar.update(1)
 
                     # Remove invalid footprints from simulation (e.g. Vegetation Height Difference between ALS and GEDI)
+                    filtered_processed_fpts = []
                     idx = 0
                     for fpt in processed_fpts:
                         if len(fpt) == 1 and type(fpt[0]) == int:
                             print(f"[Correction] Footprint with shot_number {fpt[0]} presents a vegetation \
                                 height difference between ALS collection date and GEDI observation. \
                                 Potential vegetation cut. Skipping its correction...")
-                            del processed_fpts[idx]
-                        idx += 1
+                            continue
+                        filtered_processed_fpts.append(fpt)
+                        
+                    del processed_fpts
                     
                     # Score footprints in parallel
-                    with tqdm(total=len(processed_fpts), desc="Correcting Footprints") as pbar:
-                        for corrected in pool.imap_unordered(partial_func_correction, processed_fpts):
+                    with tqdm(total=len(filtered_processed_fpts), desc="Correcting Footprints") as pbar:
+                        for corrected in pool.imap_unordered(partial_func_correction, filtered_processed_fpts):
                             results.append(corrected)
                             pbar.update(1)
+
+                    # Cluster footprints by delta time
+                    clusters_dict = cluster_footprints(results)
+
+                    # Add relevant info about clusters
+                    results = annotate_clusters(results, clusters_dict)
+
+                    # Correct by cluster
+                    corrected_clusters = scorer.score_cluster(results, clusters_dict)
             else:
                 # Sequential mode
                 print(f"[Simulate] Running in sequential mode")
@@ -432,7 +438,7 @@ class GEDICorrect:
 
             # Save files after correcting
             print(f"[Simulate] Saving corrected granule {filename}")
-            self._save_outputs(results, filename)
+            self._save_outputs(results, filename, cluster_results=corrected_clusters)
 
 
 
@@ -567,7 +573,7 @@ class GEDICorrect:
             print(f"[Simulate] Correcting granule {filename}")
             print(f"[Simulate] Criteria: {self.criteria}")
 
-            scorer = CorrectionScorer(original_df=footprint_df, criteria=self.criteria) # Init Scorer
+            scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria) # Init Scorer
             offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step) # Generate grid
 
             footprints = [row for i, row in footprint_df.iterrows()]
@@ -648,7 +654,7 @@ class GEDICorrect:
             print(f"[Simulate] Correcting granule {filename}")
             print(f"[Simulate] Criteria: {self.criteria}")
 
-            scorer = CorrectionScorer(original_df=footprint_df, criteria=self.criteria)
+            scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria)
             offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step)
 
             footprints = [row for i, row in footprint_df.iterrows()]

@@ -6,8 +6,9 @@ Also includes Plotting function
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy.stats import entropy
+from scipy.stats import entropy, pearsonr, linregress
 from scipy.interpolate import interp1d
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 
 def normalize_waveform(wave):
     """

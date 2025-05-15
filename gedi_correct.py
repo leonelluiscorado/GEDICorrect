@@ -1,5 +1,9 @@
 import os
 import argparse
+import pandas as pd
+import geopandas as gpd
+import scipy
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 
 from src.correct import GEDICorrect
 from src.waveform_processing import create_beautiful_scatterplot
@@ -72,7 +76,7 @@ correct = GEDICorrect(granule_list=input_granules,
                       n_processes=args.n_processes)
 
 if args.mode == "footprint":
-    results = correct.simulate(n_points=args.n_points, max_radius=args.radius, min_dist=args.min_dist)
+    results = correct.simulate(grid_size=args.grid_size, grid_step=args.grid_step)
 else:
     results = correct.simulate(grid_size=args.grid_size, grid_step=args.grid_step)
 
@@ -82,7 +86,7 @@ print(f"[Correction] Correction of input footprints complete! All files have bee
 
 print(f"[Result] Calculating results from {args.out_dir}")
 
-files = [f for f in os.listdir(args.out_dir) if f.endswith(".shp") or f.endswith(".gpkg")]
+files = [f for f in os.listdir(args.out_dir) if (f.endswith(".shp") or f.endswith(".gpkg")) and "CORRECTED" in f]
 
 if not len(files):
     print("Output directory is empty.")
@@ -97,7 +101,7 @@ for file in files:
 main_df = gpd.GeoDataFrame(pd.concat(main_df))
 joined_df = main_df.dropna(axis=0)
 
-r = pearsonr(joined_df['rhGauss_95'].values, joined_df['rh95'].values)
+r = scipy.stats.pearsonr(joined_df['rhGauss_95'].values, joined_df['rh95'].values)
 rmse = root_mean_squared_error(joined_df['rh95'].values, joined_df['rhGauss_95'].values)
 mae = mean_absolute_error(joined_df['rh95'].values, joined_df['rhGauss_95'].values)
 rsquared_criteria = r.statistic ** 2

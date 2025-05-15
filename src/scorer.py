@@ -31,8 +31,9 @@ class CorrectionScorer:
         add_info    : Flag as to whether add info (difference, mean) about every metric defined in 'criteria'
     """
 
-    def __init__(self, original_df=None, criteria='all', ground='GEDI', product='L2A', add_info=True):
+    def __init__(self, original_df=None, crs=None, criteria='all', ground='GEDI', product='L2A', add_info=True):
         self.original_df = original_df
+        self.crs = crs
         self.criteria = []
         self.ground = ground
         self.product = product
@@ -144,6 +145,49 @@ class CorrectionScorer:
         sim_footprints['final_score'] = self._calculate_score(sim_footprints)
 
         return sim_footprints
+
+
+    def score_cluster(self, results, cluster_dict):
+
+        corrected_fpts = []
+
+        # For each cluster
+        for main_idx, cluster_indices in cluster_dict.items():
+            score_accumulator = {}  # (x, y) offset → [list of scores]
+
+            for idx in cluster_indices:
+                df = results[idx]
+                for _, row in df.iterrows():
+                    offset = row['grid_offset']
+                    score = row['final_score']
+                    shot_number = row['shot_number']
+
+                    if offset not in score_accumulator:
+                        score_accumulator[offset] = []
+
+                    score_accumulator[offset].append(score)
+
+            # Compute mean score for each offset
+            mean_scores = {
+                offset: sum(scores) / len(scores)
+                for offset, scores in score_accumulator.items()
+            }
+
+            # Select best offset
+            best_offset = max(mean_scores.items(), key=lambda x: x[1])[0]
+
+            # From the main footprint’s DataFrame, select the row with this offset
+            main_df = results[main_idx]
+            corrected_row = main_df[main_df['grid_offset'] == best_offset]
+
+            if not corrected_row.empty:
+                corrected_fpts.append(corrected_row.iloc[0])  # single row → Series
+
+        # Convert list of Series back into a DataFrame
+        corrected_df = gpd.GeoDataFrame(corrected_fpts, crs=self.crs, geometry='geometry')
+        corrected_df = corrected_df.reset_index(drop=True)
+
+        return corrected_df
 
 
     def _rh_correlation(self, original, simulated):
