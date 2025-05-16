@@ -294,7 +294,7 @@ def parse_txt(origin_footprint, filename):
     return df[cols]
 
 
-def cluster_footprints(sim_fpts, time_window=0.215):
+def cluster_footprints(sim_fpts, method='single', time_window=0.215):
     '''
     Groups footprints into clusters based on the time_window.
 
@@ -306,39 +306,47 @@ def cluster_footprints(sim_fpts, time_window=0.215):
         dict of clusters
     '''
 
-    delta_times = []
+    # Create summary table with metadata
+    metadata = []
+    for idx, df in enumerate(sim_fpts):
+        row = df.iloc[0]
+        metadata.append({
+            'index': idx,
+            'geolocation_delta_time': row['geolocation_delta_time'],
+            'BEAM': row['BEAM']
+        })
 
-    # Grab delta times from each footprint
-    for i, fpt_list in enumerate(sim_fpts):
-        fpt_time = fpt_list.iloc[0]['geolocation_delta_time']
-        delta_times.append((i, fpt_time))
+    meta_df = pd.DataFrame(metadata).sort_values(by='geolocation_delta_time').reset_index(drop=True)
 
-    delta_times.sort(key=lambda x: x[1])
-    indices, times = zip(*delta_times)
+    clusters = {}
 
-    # Initialize clusters
-    clusters = []
-    main_idx = []
-    n = len(times)
+    for i, row in meta_df.iterrows():
+        current_idx = row['index']
+        current_time = row['geolocation_delta_time']
+        current_beam = row['BEAM']
 
-    for i in range(n):
-        current_time = times[i]
-        cluster_indices = []
+        # Select candidates within ± time_window
+        lower = current_time - time_window
+        upper = current_time + time_window
 
-        # Include footprints within the time window
-        for j in range(n):
-            if abs(times[j] - current_time) <= time_window:
-                cluster_indices.append(indices[j])
+        if method == 'single':
+            condition = (
+                (meta_df['geolocation_delta_time'] >= lower) &
+                (meta_df['geolocation_delta_time'] <= upper) &
+                (meta_df['BEAM'] == current_beam)
+            )
+        else:  # 'multi'
+            condition = (
+                (meta_df['geolocation_delta_time'] >= lower) &
+                (meta_df['geolocation_delta_time'] <= upper)
+            )
 
-        # Exclude clusters with only one footprint
+        cluster_indices = meta_df[condition]['index'].tolist()
+
         if len(cluster_indices) > 1:
-            cluster = (indices[i], cluster_indices)
-            clusters.append(cluster)
-            main_idx.append(indices[i])
+            clusters[current_idx] = cluster_indices
 
-    clusters.sort(key=lambda x: x[0])
-
-    return dict(clusters)
+    return dict(sorted(clusters.items()))
 
 
 def annotate_clusters(processed_fpts, cluster_dict):
@@ -371,3 +379,57 @@ def annotate_clusters(processed_fpts, cluster_dict):
             processed_fpts[cluster_id] = df
 
     return processed_fpts
+
+
+def build_cluster_rectangles(processed_fpts, cluster_dict, crs="EPSG:4326", width_meters=25):
+    
+    from shapely.geometry import Polygon
+    from pyproj import Geod, CRS, Transformer
+
+    input_crs = CRS.from_user_input(crs)
+    transformer_to_wgs84 = Transformer.from_crs(input_crs, "EPSG:4326", always_xy=True)
+    transformer_to_original = Transformer.from_crs("EPSG:4326", input_crs, always_xy=True)
+
+    geod = Geod(ellps="WGS84")
+    cluster_polygons = []
+
+    for cluster_id, indices in cluster_dict.items():
+
+        # Get first/last point in original CRS
+        first = processed_fpts[indices[0]].iloc[0]
+        last = processed_fpts[indices[-1]].iloc[0]
+
+        # Transform to WGS84
+        lon1, lat1 = transformer_to_wgs84.transform(first['lon'], first['lat'])
+        lon2, lat2 = transformer_to_wgs84.transform(last['lon'], last['lat'])
+
+        azimuth_fwd, _, _ = geod.inv(lon1, lat1, lon2, lat2)
+
+        offset_angle1 = azimuth_fwd + 90
+        offset_angle2 = azimuth_fwd - 90
+
+        l1_lon, l1_lat, _ = geod.fwd(lon1, lat1, offset_angle1, width_meters / 2)
+        r1_lon, r1_lat, _ = geod.fwd(lon1, lat1, offset_angle2, width_meters / 2)
+        l2_lon, l2_lat, _ = geod.fwd(lon2, lat2, offset_angle1, width_meters / 2)
+        r2_lon, r2_lat, _ = geod.fwd(lon2, lat2, offset_angle2, width_meters / 2)
+
+        # Transform back to original CRS
+        l1_x, l1_y = transformer_to_original.transform(l1_lon, l1_lat)
+        l2_x, l2_y = transformer_to_original.transform(l2_lon, l2_lat)
+        r1_x, r1_y = transformer_to_original.transform(r1_lon, r1_lat)
+        r2_x, r2_y = transformer_to_original.transform(r2_lon, r2_lat)
+
+        polygon = Polygon([
+            (l1_x, l1_y),
+            (l2_x, l2_y),
+            (r2_x, r2_y),
+            (r1_x, r1_y)
+        ])
+
+        cluster_polygons.append({
+            'cluster_id': cluster_id,
+            'num_footprints': len(indices),
+            'geometry': polygon
+        })
+
+    return gpd.GeoDataFrame(cluster_polygons, crs=crs)

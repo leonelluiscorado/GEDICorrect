@@ -400,6 +400,10 @@ class GEDICorrect:
                     clusters_dict = cluster_footprints(results)
 
                     # Add relevant info about clusters
+                    cluster_bounds = build_cluster_rectangles(results, clusters_dict, crs=self.crs)
+                    cluster_bounds.to_file(os.path.join(self.out_dir, 'Cluster_BOUNDS.shp'))
+
+                    # Add relevant info about clusters
                     results = annotate_clusters(results, clusters_dict)
 
                     # Correct by cluster
