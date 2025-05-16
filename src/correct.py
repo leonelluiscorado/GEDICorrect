@@ -401,7 +401,8 @@ class GEDICorrect:
 
                     # Add relevant info about clusters
                     cluster_bounds = build_cluster_rectangles(results, clusters_dict, crs=self.crs)
-                    cluster_bounds.to_file(os.path.join(self.out_dir, 'Cluster_BOUNDS.shp'))
+                    out_filename_clusterbounds = filename.split('/')[-1].split('.')[0]
+                    cluster_bounds.to_file(os.path.join(self.out_dir, f'CLUSTER_BOUNDS_{out_filename_clusterbounds}.shp'))
 
                     # Add relevant info about clusters
                     results = annotate_clusters(results, clusters_dict)
