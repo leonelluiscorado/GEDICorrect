@@ -309,6 +309,11 @@ def cluster_footprints(sim_fpts, method='single', time_window=0.215):
     # Create summary table with metadata
     metadata = []
     for idx, df in enumerate(sim_fpts):
+        
+        # Ignore size one datasets
+        if len(df) <= 1:
+            continue
+
         row = df.iloc[0]
         metadata.append({
             'index': idx,
@@ -343,6 +348,7 @@ def cluster_footprints(sim_fpts, method='single', time_window=0.215):
 
         cluster_indices = meta_df[condition]['index'].tolist()
 
+        # Discard size 1 clusters
         if len(cluster_indices) > 1:
             clusters[current_idx] = cluster_indices
 
