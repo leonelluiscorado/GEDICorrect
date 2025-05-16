@@ -450,7 +450,7 @@ class GEDICorrect:
             print(f"[Simulate] Saving corrected granule {filename}")
             self._save_outputs(results, filename, cluster_results=corrected_clusters)
 
-
+            del corrected_clusters, results, clusters_dict
 
     def _process_orbit_level(self, footprint, grid, temp_dir, original_df, filename, crs, scorer, score_dict, lock):
         '''
