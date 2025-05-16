@@ -309,7 +309,7 @@ def cluster_footprints(sim_fpts, method='single', time_window=0.215):
     # Create summary table with metadata
     metadata = []
     for idx, df in enumerate(sim_fpts):
-        
+
         # Ignore size one datasets
         if len(df) <= 1:
             continue
@@ -439,3 +439,27 @@ def build_cluster_rectangles(processed_fpts, cluster_dict, crs="EPSG:4326", widt
         })
 
     return gpd.GeoDataFrame(cluster_polygons, crs=crs)
+
+
+def add_cluster_stats(fpts):
+    corrected_clusters = fpts.copy()
+
+    # X and Y offsets
+    corrected_clusters[['offset_x', 'offset_y']] = corrected_clusters['grid_offset'].apply(pd.Series)
+
+    # Euclidean distance from original point to offset
+    corrected_clusters['distance_offset'] = np.sqrt(corrected_clusters['offset_x']**2 + corrected_clusters['offset_y']**2)
+
+    beam_stats = corrected_clusters.groupby('BEAM').agg({
+        'offset_x': 'mean',
+        'offset_y': 'mean',
+        'distance_offset': 'mean'
+    }).rename(columns={
+        'offset_x': 'shift_x_beam',
+        'offset_y': 'shift_y_beam',
+        'distance_offset': 'shift_beam_offset'
+    })
+
+    corrected_clusters = corrected_clusters.merge(beam_stats, on='BEAM', how='left')
+
+    return corrected_clusters

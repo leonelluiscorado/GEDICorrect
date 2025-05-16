@@ -15,6 +15,7 @@ from .data_process import *
 from .simulation import process_all_footprints, init_random_seed, process_all_footprints
 from .scorer import CorrectionScorer
 from .waveform_processing import plot_waveform_comparison
+from .metric import euclidean_dist
 
 from tqdm import tqdm
 from p_tqdm import p_map
@@ -409,6 +410,10 @@ class GEDICorrect:
 
                     # Correct by cluster
                     corrected_clusters = scorer.score_cluster(results, clusters_dict)
+
+                    # Add info
+                    corrected_clusters = add_cluster_stats(corrected_clusters)
+                    
             else:
                 # Sequential mode
                 print(f"[Simulate] Running in sequential mode")
