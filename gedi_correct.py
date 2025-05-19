@@ -29,6 +29,9 @@ parser.add_argument('--save_origin_location', required=False, help='Flag option 
 parser.add_argument('--mode', required=True, help='Selects the footprint correction method between Orbit-level, Beam-level or Footprint-level, based on the list [“orbit”, “beam”, “footprint”].', \
                     type=str, default="footprint")
 
+parser.add_argument('--random', required=False, help='Use random footprint-level correction without clusterization. Used only if mode == \'footprint\'', \
+                    action='store_true', default=False)
+
 parser.add_argument('--criteria', required=True, help='Set of criteria to select the best footprint. Select from "wave", "rh", "rh_correlation" and "terrain". \
                                                        Select "all" to evaluate all simulated footprints with all the possible criteria', type=str, default='kl')
 
@@ -69,14 +72,18 @@ correct = GEDICorrect(granule_list=input_granules,
                       las_dir=args.las_dir,
                       out_dir=args.out_dir,
                       mode=args.mode,
+                      random=args.random,
                       criteria=args.criteria,
                       save_sim_points=args.save_sim_points,
                       save_origin_location=args.save_origin_location,
                       use_parallel=args.parallel,
                       n_processes=args.n_processes)
 
-if args.mode == "footprint":
-    results = correct.simulate(grid_size=args.grid_size, grid_step=args.grid_step)
+if args.random and args.mode != "footprint":
+    args.random = False
+
+if args.random:
+    results = correct.simulate(n_points=args.n_points, max_radius=args.radius, min_dist=args.min_dist)
 else:
     results = correct.simulate(grid_size=args.grid_size, grid_step=args.grid_step)
 
