@@ -22,6 +22,9 @@ from p_tqdm import p_map
 import multiprocessing
 from multiprocessing import Manager, Lock
 from functools import partial
+from memory_profiler import profile
+import gc
+
 
 class GEDICorrect:
     """
@@ -324,7 +327,7 @@ class GEDICorrect:
         else:
             # Footprint-Level mode
             # Already selected best footprints in a geodataframe
-            if cluster_results:
+            if not cluster_results is None:
                 cluster_results['RXWAVECOUNT'] = cluster_results['RXWAVECOUNT'].apply(str)
                 cluster_results['grid_offset'] = cluster_results['grid_offset'].apply(str)
                 cluster_results['cluster_bounds'] = cluster_results['cluster_bounds'].apply(str)
@@ -355,7 +358,7 @@ class GEDICorrect:
                 out_df = out_df.drop(columns=['FSIGMA'])
                 out_df.to_file(os.path.join(self.out_dir, 'CORRECTED_'+out_filename))
 
-
+    @profile
     def _footprint_simulate(self, n_points=100, max_radius=12.5, min_dist=1.0, grid_size=15, grid_step=1):
         '''
         Simulates and Scores at the footprint-level all of the input GEDI granules.
@@ -372,16 +375,14 @@ class GEDICorrect:
             None
         '''
 
-        offsets = []
+        if not self.random:
+            offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step) # Generate grid
 
         # Correct granules at the footprint level
         for filename, footprint_df in self.gedi_granules.items():
             print(f"[Simulate] Correcting granule {filename}")
 
             scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria) # Define Scorer
-
-            if not self.random:
-                offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step) # Generate grid
 
             footprints = [row for i, row in footprint_df.iterrows()]
             processed_fpts = []
@@ -438,6 +439,31 @@ class GEDICorrect:
                         for corrected in pool.imap_unordered(partial_func_correction, filtered_processed_fpts):
                             results.append(corrected)
                             pbar.update(1)
+
+                    # Perform the clustering process in parallel
+                    # Cluster footprints by delta time
+                    clusters_dict = cluster_footprints(results)
+
+                    # Add relevant info about clusters
+                    cluster_bounds = build_cluster_rectangles(results, clusters_dict, crs=self.crs)
+                    out_filename_clusterbounds = filename.split('/')[-1].split('.')[0]
+                    cluster_bounds.to_file(os.path.join(self.out_dir, f'CLUSTER_BOUNDS_{out_filename_clusterbounds}.shp'))
+
+                    # Add relevant info about clusters
+                    results = annotate_clusters(results, clusters_dict)
+
+                    cluster_args = [(main_idx, cluster_indices) for main_idx, cluster_indices in clusters_dict.items()]
+
+                    partial_func_clustering = partial(scorer.score_cluster_parallel, results=results)
+
+                    cluster_results = []
+
+                    with tqdm(total=len(filtered_processed_fpts), desc="Clustering Footprints") as pbar:
+                        for corrected in pool.imap_unordered(partial_func_clustering, cluster_args):
+                            cluster_results.append(corrected)
+                            pbar.update(1)
+                    
+                    del partial_func_correction, partial_func_processing, partial_func_clustering
                     
             else:
                 # Sequential mode
@@ -471,33 +497,19 @@ class GEDICorrect:
                             results.append(correct_fpt)
                         pbar.update(1)
 
-            corrected_clusters = None
+            corrected_clusters = gpd.GeoDataFrame([fpt for fpt in cluster_results if fpt is not None], crs=self.crs, geometry='geometry')
 
-            if not self.random:
-                # Cluster footprints by delta time
-                clusters_dict = cluster_footprints(results)
+            # Add info
+            corrected_clusters = add_cluster_stats(corrected_clusters)
 
-                # Add relevant info about clusters
-                cluster_bounds = build_cluster_rectangles(results, clusters_dict, crs=self.crs)
-                out_filename_clusterbounds = filename.split('/')[-1].split('.')[0]
-                cluster_bounds.to_file(os.path.join(self.out_dir, f'CLUSTER_BOUNDS_{out_filename_clusterbounds}.shp'))
-
-                # Add relevant info about clusters
-                results = annotate_clusters(results, clusters_dict)
-
-                # Correct by cluster
-                corrected_clusters = scorer.score_cluster(results, clusters_dict)
-
-                # Add info
-                corrected_clusters = add_cluster_stats(corrected_clusters)
-
-                del clusters_dict
+            del clusters_dict
 
             # Save files after correcting
             print(f"[Simulate] Saving corrected granule {filename}")
             self._save_outputs(results, filename, cluster_results=corrected_clusters)
 
             del corrected_clusters, results
+            gc.collect()
 
     def _process_orbit_level(self, footprint, grid, temp_dir, original_df, filename, crs, scorer, score_dict, lock):
         '''

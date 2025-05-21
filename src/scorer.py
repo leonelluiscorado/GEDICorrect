@@ -195,6 +195,45 @@ class CorrectionScorer:
         return corrected_df
 
 
+    def score_cluster_parallel(self, cluster, results):
+
+        main_id, cluster_ids = cluster
+
+        corrected_fpts = []
+        
+        score_accumulator = {}  # (x, y) offset → [list of scores]
+
+        for idx in cluster_ids:
+            df = results[idx]
+            for _, row in df.iterrows():
+                offset = row['grid_offset']
+                score = row['final_score']
+                shot_number = row['shot_number']
+
+                if offset not in score_accumulator:
+                    score_accumulator[offset] = []
+
+                score_accumulator[offset].append(score)
+
+        # Compute mean score for each offset
+        mean_scores = {
+            offset: sum(scores) / len(scores)
+            for offset, scores in score_accumulator.items()
+        }
+
+        # Select best offset
+        best_offset = max(mean_scores.items(), key=lambda x: x[1])[0]
+
+        # From the main footprint’s DataFrame, select the row with this offset
+        main_df = results[main_id]
+        corrected_row = main_df[main_df['grid_offset'] == best_offset]
+
+        if not corrected_row.empty:
+            return corrected_row.iloc[0]  # single row → Series
+
+        return None
+
+
     def _rh_correlation(self, original, simulated):
         """
         ///// PROPOSAL METRIC - NOT TESTED /////
