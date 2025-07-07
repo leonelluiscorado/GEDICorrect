@@ -82,7 +82,7 @@ if not len(files):
 main_df = []
 
 for file in files:
-    temp_df = gpd.read_file(os.path.join(our_filespath, file), engine='pyogrio')
+    temp_df = gpd.read_file(os.path.join(result_dir, file), engine='pyogrio')
     main_df.append(temp_df)
 
 main_df = gpd.GeoDataFrame(pd.concat(main_df))

@@ -12,6 +12,7 @@ from shapely.geometry import box, Point, Polygon
 from tqdm import tqdm
 
 import os
+from memory_profiler import profile
 
 def create_buffer(footprint, distance):
     """
@@ -252,7 +253,7 @@ def parse_simulated_h5(h5_file, num_sim_points):
     return waveform_df
 
 
-def parse_txt(origin_shotnum, filename):
+def parse_txt(origin_footprint, filename):
     """
     Parses the TXT file from the gediMetrics simulation, returning a DataFrame.
 
@@ -263,6 +264,7 @@ def parse_txt(origin_shotnum, filename):
     Returns:
         df (DataFrame): The TXT file contents parsed into a DataFrame.
     """
+
     with open(filename, "r+") as text_file:
         lines = text_file.readlines()
 
@@ -281,12 +283,195 @@ def parse_txt(origin_shotnum, filename):
 
     # Rearrange ID into Shot Number and Beam
     df = pd.read_csv(filename, delimiter=' ')
-    df['shot_number'] = str(origin_shotnum)
+    df['shot_number'] = str(origin_footprint['shot_number_x'].values[0])
+    df['geolocation_delta_time'] = origin_footprint['geolocation_delta_time'].values[0]
     df['linkM'], df['linkCov'] = 0, 0
 
     # Rearrange columns
     cols = df.columns.tolist()
-    cols = cols[-2:] + cols[:-2]
+    cols = cols[-3:] + cols[:-3]
     cols = clean_cols_rh(cols)
 
     return df[cols]
+
+def cluster_footprints(df, method='single', time_window=0.215):
+    """
+    Builds individual clusters around each footprint based on 'delta_time' window and optional beam match based on 'method'.
+    Each cluster is keyed by a footprint shot_number and contains a list of nearby shot_numbers.
+
+    Args:
+        df (DataFrame): DataFrame of simulated and scored footprints.
+        method (str): BEAM selection method. Any method other than 'single' will select all BEAMS, whereas 'single' selects only
+                      footprints that are close but only for their BEAM. Defaults to 'single'.
+        time_window (float): Time window in Hz for GEDI footprint clustering. Defaults to 0.215 Hz.
+    
+    Returns:
+        clusters (dict): Dictionary of clusters, where for each footprint (key), contains a list of all neighboring
+                         footprints (value).
+    """
+    # Ensure deterministic order
+    df = df.sort_values(by=['BEAM', 'geolocation_delta_time', 'shot_number']).reset_index(drop=True)
+
+    delta_times = df['geolocation_delta_time'].values
+    beams = df['BEAM'].astype(str).values
+    shot_numbers = df['shot_number'].astype(str).values
+
+    clusters = {}
+
+    for i in range(len(delta_times)):
+        t_i = delta_times[i]
+        sn_i = shot_numbers[i]
+        beam_i = beams[i]
+
+        # Find all indices within time window
+        in_window = (np.abs(delta_times - t_i) <= time_window)
+
+        if method == 'single':
+            in_window &= (beams == beam_i)
+
+        cluster_members = shot_numbers[in_window].tolist()
+
+        if len(cluster_members) > 1:
+            clusters[sn_i] = sorted(cluster_members)  # Sort for deterministic output
+
+    return clusters
+
+
+def annotate_clusters(processed_fpts, cluster_dict):
+    """
+    Add Clustering information to the processed footprints dataframe, such as cluster bounds (in lat/lon format)
+
+    Args:
+        processed_fpts (list): List of DataFrames of all processed scored footprints
+        cluster_dict (dict): A Dictionary containing all of the clusters. Consists of (Main Shot_number) : List of neighboring shot_numbers pairs.
+
+    Returns:
+        list: Updated processed_fpts list with information about each footprint's cluster.
+    """
+
+    fpt_dict = {df.iloc[0]['shot_number']: df for df in processed_fpts if not len(df) <= 1 and 'shot_number' in df.columns}
+
+    for cluster_id, shot_list in cluster_dict.items():
+        if len(shot_list) <= 1:
+            continue
+
+        first_id, last_id = shot_list[0], shot_list[-1]
+        first_cluster_fpt = fpt_dict.get(first_id)
+        last_cluster_fpt = fpt_dict.get(last_id)
+
+        if first_cluster_fpt is None or last_cluster_fpt is None:
+            continue
+
+        if len(first_cluster_fpt) <= 1 or len(last_cluster_fpt) <= 1:
+            continue
+
+        first_original_index = first_cluster_fpt[first_cluster_fpt['grid_offset'] == (0, 0)]
+        last_original_index = last_cluster_fpt[last_cluster_fpt['grid_offset'] == (0, 0)]
+
+        if first_original_index.empty or last_original_index.empty:
+            continue
+
+        lat1, lon1 = first_original_index['lat'].values[0], first_original_index['lon'].values[0]
+        lat2, lon2 = last_original_index['lat'].values[0], last_original_index['lon'].values[0]
+        cluster_bounds = ((lat1, lon1), (lat2, lon2))
+
+        df = fpt_dict.get(cluster_id)
+        if df is None or len(df) <= 1:
+            continue
+        
+        df['cluster_bounds'] = [cluster_bounds] * len(df)
+        fpt_dict[cluster_id] = df
+
+    return list(fpt_dict.values())
+
+
+
+def build_cluster_rectangles(processed_fpts, cluster_dict, crs="EPSG:4326", width_meters=25):
+    """
+    WIP
+    """
+    
+    from shapely.geometry import Polygon
+    from pyproj import Geod, CRS, Transformer
+
+    input_crs = CRS.from_user_input(crs)
+    transformer_to_wgs84 = Transformer.from_crs(input_crs, "EPSG:4326", always_xy=True)
+    transformer_to_original = Transformer.from_crs("EPSG:4326", input_crs, always_xy=True)
+
+    geod = Geod(ellps="WGS84")
+    cluster_polygons = []
+
+    for cluster_id, indices in cluster_dict.items():
+
+        # Get first/last point in original CRS
+        first = processed_fpts[indices[0]].iloc[0]
+        last = processed_fpts[indices[-1]].iloc[0]
+
+        # Transform to WGS84
+        lon1, lat1 = transformer_to_wgs84.transform(first['lon'], first['lat'])
+        lon2, lat2 = transformer_to_wgs84.transform(last['lon'], last['lat'])
+
+        azimuth_fwd, _, _ = geod.inv(lon1, lat1, lon2, lat2)
+
+        offset_angle1 = azimuth_fwd + 90
+        offset_angle2 = azimuth_fwd - 90
+
+        l1_lon, l1_lat, _ = geod.fwd(lon1, lat1, offset_angle1, width_meters / 2)
+        r1_lon, r1_lat, _ = geod.fwd(lon1, lat1, offset_angle2, width_meters / 2)
+        l2_lon, l2_lat, _ = geod.fwd(lon2, lat2, offset_angle1, width_meters / 2)
+        r2_lon, r2_lat, _ = geod.fwd(lon2, lat2, offset_angle2, width_meters / 2)
+
+        # Transform back to original CRS
+        l1_x, l1_y = transformer_to_original.transform(l1_lon, l1_lat)
+        l2_x, l2_y = transformer_to_original.transform(l2_lon, l2_lat)
+        r1_x, r1_y = transformer_to_original.transform(r1_lon, r1_lat)
+        r2_x, r2_y = transformer_to_original.transform(r2_lon, r2_lat)
+
+        polygon = Polygon([
+            (l1_x, l1_y),
+            (l2_x, l2_y),
+            (r2_x, r2_y),
+            (r1_x, r1_y)
+        ])
+
+        cluster_polygons.append({
+            'cluster_id': cluster_id,
+            'num_footprints': len(indices),
+            'geometry': polygon
+        })
+
+    return gpd.GeoDataFrame(cluster_polygons, crs=crs)
+
+
+def add_cluster_stats(fpts):
+    """
+    Adds final information about the cluster and offset of the final corrected footprint.
+
+    Args:
+        fpts (pandas.DataFrame): DataFrame containing the corrected footprints.
+
+    Returns:
+        pd.DataFrame: Updated input DataFrame with information about correction for each footprint.
+    """
+
+    corrected_clusters = fpts.copy()
+
+    # X and Y offsets
+    corrected_clusters[['offset_x', 'offset_y']] = corrected_clusters['grid_offset'].apply(pd.Series)
+
+    # Euclidean distance from original point to offset
+    corrected_clusters['distance_offset'] = np.sqrt(corrected_clusters['offset_x']**2 + corrected_clusters['offset_y']**2)
+
+    beam_stats = corrected_clusters.groupby('BEAM').agg({
+        'offset_x': 'mean',
+        'offset_y': 'mean',
+        'distance_offset': 'mean'
+    }).rename(columns={
+        'offset_x': 'shift_x_beam',
+        'offset_y': 'shift_y_beam',
+        'distance_offset': 'shift_beam_offset'
+    })
+
+    corrected_clusters = corrected_clusters.merge(beam_stats, on='BEAM', how='left')
+
+    return corrected_clusters

@@ -23,6 +23,20 @@ def init_random_seed():
     np.random.seed(seed)
 
 
+def generate_fixed_points(centroid_x, centroid_y, num_points):
+    """
+    Generates a number of fixed points on a single coordinate.
+    Args:
+        centroid_x (float): Centroid Lat.
+        centroid_y (float): Centroid Lon.
+        num_points (int): Number of points to simulated on a single coordinate.
+
+    Returns:
+        list: List of Point.
+    """
+    return [Point(centroid_x, centroid_y) for _ in range(num_points)]
+
+
 def generate_random_points(centroid_x, centroid_y, num_points, max_radius=12.5, min_dist=1.0):
     """
     Generates a random number of 'num_points' points around (x,y) coordinates of a footprint
@@ -116,9 +130,8 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
                 offset_x = footprint['geometry'].x + offset[0]
                 offset_y = footprint['geometry'].y + offset[1]
                 f.write(f"{offset_x} {offset_y}\n")
-
     ## Generate txt list of coordinates from random points
-    if num_points:
+    elif num_points:
         ## Generate random points around footprint
         rand_points = generate_random_points(footprint['geometry'].x, footprint['geometry'].y, num_points=num_points, max_radius=max_radius, min_dist=min_dist)
 
@@ -135,19 +148,37 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
     metric_outroot = os.path.join(temp_dir, f"{idx}_")
 
     ## Simulate waveforms
-    exit_code = subprocess.run(["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", "3763", "-ground", "-maxBins", nbins, "-output", h5_file_dir], stdout=subprocess.DEVNULL)
+    try:
+        exit_code = subprocess.run(["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", "3763", "-ground", "-maxBins", nbins, "-output", h5_file_dir], timeout=60, stdout=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        print(f"gediRat timeout at footprint {shot_number}")
+        return []
+    except subprocess.CalledProcessError:
+        print(f"gediRat failed on {shot_number}")
+        return []
 
     ## Check if footprint simulated:
     if not os.path.exists(h5_file_dir):
         # if footprint did not simulate correctly, for some reason, ignore it
         return []
 
-    exit_code = subprocess.run(["gediMetric", "-input", h5_file_dir, "-readHDFgedi", "-ground", "-varScale", "3.5", "-sWidth", "0.8", "-rhRes", "1", "-laiRes", "5", "-outRoot", metric_outroot], stdout=subprocess.DEVNULL)
-    
-    ## Handle each output
-    txt_df = parse_txt(footprint['shot_number_x'], metric_outroot+'.metric.txt') ######## TODO: Transform shotnumber to string and csv must display differently
+    ## Extract waveform metrics
     try:
-        h5_df  = parse_simulated_h5(h5_file_dir, len(grid))
+        exit_code = subprocess.run(["gediMetric", "-input", h5_file_dir, "-readHDFgedi", "-ground", "-varScale", "3.5", "-sWidth", "0.8", "-rhRes", "1", "-laiRes", "5", "-outRoot", metric_outroot], timeout=60, stdout=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        print(f"gediMetrics timeout at footprint {shot_number}")
+        return []
+    except subprocess.CalledProcessError:
+        print(f"gediMetrics failed on {shot_number}")
+        return []
+
+    ## Handle each output
+    txt_df = parse_txt(original_fpt, metric_outroot+'.metric.txt') ######## TODO: Transform shotnumber to string and csv must display differently
+    try:
+        if grid:
+            h5_df  = parse_simulated_h5(h5_file_dir, len(grid))
+        else:
+            h5_df  = parse_simulated_h5(h5_file_dir, num_points)
     except ValueError as e:
         return []
 
@@ -161,6 +192,7 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
 
     if grid:
         all_df['grid_offset'] = grid
+        grid_size = len(grid)
 
     # Filter out special case footprints
     if grid and simulate_original:

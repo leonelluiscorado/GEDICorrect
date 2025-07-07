@@ -3,7 +3,8 @@ Helper functions that calculate metrics for waveform similarity between original
 """
 
 from .waveform_processing import *
-from scipy.stats import pearsonr, spearmanr, entropy
+from scipy.stats import pearsonr, spearmanr, entropy, linregress
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 import math
 
 def pearson_correlation(original_wave, simulated_wave):
@@ -19,7 +20,7 @@ def pearson_correlation(original_wave, simulated_wave):
         float: correlation r value between original and simulated waveforms.
     """
     r = pearsonr(original_wave, simulated_wave)
-    return r.statistic
+    return round(r.statistic, 5)
 
 
 def spearman_correlation(original_wave, simulated_wave):
@@ -35,7 +36,7 @@ def spearman_correlation(original_wave, simulated_wave):
         float: correlation r value between original and simulated waveforms.
     """
     r = spearmanr(original_wave, simulated_wave)
-    return r.statistic
+    return round(r.statistic, 5)
 
 
 def CRSSDA(original_array, simulated_array):
@@ -48,11 +49,11 @@ def CRSSDA(original_array, simulated_array):
         simulated_array (array_like): Simulated array (waveform or RH profile) of values for reported footprint.
 
     Returns:
-        float: Result of CRSSDA.
+        float: Result of CRSSDA. Rounded to 5 decimal places.
     """
     sub = [(real - sim)**2 for sim, real in zip(simulated_array, original_array)]
     alignment = sum(sub)
-    return math.sqrt(alignment)
+    return round(math.sqrt(alignment), 5)
 
 
 def KL(original_wave, simulated_wave):
@@ -65,7 +66,7 @@ def KL(original_wave, simulated_wave):
         simulated_wave (array_like): Simulated waveform for reported footprint.
 
     Returns:
-        kl_score (float): KL Score.
+        kl_score (float): KL Score. Rounded to 5 decimal places.
     """
     # Normalize both waveforms from 0 to 1
     normed_ori_wave = normalize_waveform(original_wave) 
@@ -73,9 +74,11 @@ def KL(original_wave, simulated_wave):
 
     original_wave = np.where(normed_ori_wave <= 0, 0.0000000001, normed_ori_wave)
     sim_wave = np.where(normed_sim_wave <= 0, 0.0000000001, normed_sim_wave)
+
     kl_score = entropy(original_wave, sim_wave)
 
-    return kl_score
+    # Return rounded kl score to 5 decimal places
+    return round(kl_score, 5)
 
 
 def AGED(original, simulated):

@@ -1,7 +1,13 @@
 import os
 import argparse
+import pandas as pd
+import geopandas as gpd
+import scipy
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 
 from src.correct import GEDICorrect
+from src.waveform_processing import create_beautiful_scatterplot
+from src.metric import *
 
 # --------------------------COMMAND LINE ARGUMENTS AND ERROR HANDLING---------------------------- #
 # Set up argument and error handling
@@ -22,6 +28,9 @@ parser.add_argument('--save_origin_location', required=False, help='Flag option 
 
 parser.add_argument('--mode', required=True, help='Selects the footprint correction method between Orbit-level, Beam-level or Footprint-level, based on the list [“orbit”, “beam”, “footprint”].', \
                     type=str, default="footprint")
+
+parser.add_argument('--random', required=False, help='Use random footprint-level correction without clusterization. Used only if mode == \'footprint\'', \
+                    action='store_true', default=False)
 
 parser.add_argument('--criteria', required=True, help='Set of criteria to select the best footprint. Select from "wave", "rh", "rh_correlation" and "terrain". \
                                                        Select "all" to evaluate all simulated footprints with all the possible criteria', type=str, default='kl')
@@ -63,15 +72,52 @@ correct = GEDICorrect(granule_list=input_granules,
                       las_dir=args.las_dir,
                       out_dir=args.out_dir,
                       mode=args.mode,
+                      random=args.random,
                       criteria=args.criteria,
                       save_sim_points=args.save_sim_points,
                       save_origin_location=args.save_origin_location,
                       use_parallel=args.parallel,
                       n_processes=args.n_processes)
 
-if args.mode == "footprint":
+if args.random and args.mode != "footprint":
+    args.random = False
+
+if args.random:
     results = correct.simulate(n_points=args.n_points, max_radius=args.radius, min_dist=args.min_dist)
 else:
     results = correct.simulate(grid_size=args.grid_size, grid_step=args.grid_step)
 
 print(f"[Correction] Correction of input footprints complete! All files have been saved to {args.out_dir}")
+
+# ----------- Calculate results (RH95 reported vs RH95 simulated) ---------------- #
+'''
+print(f"[Result] Calculating results from {args.out_dir}")
+
+files = [f for f in os.listdir(args.out_dir) if (f.endswith(".shp") or f.endswith(".gpkg")) and "CORRECTED" in f]
+
+if not len(files):
+    print("Output directory is empty.")
+    exit()
+
+main_df = []
+
+for file in files:
+    temp_df = gpd.read_file(os.path.join(args.out_dir, file), engine='pyogrio')
+    main_df.append(temp_df)
+
+main_df = gpd.GeoDataFrame(pd.concat(main_df))
+joined_df = main_df.dropna(axis=0)
+
+r = scipy.stats.pearsonr(joined_df['rhGauss_95'].values, joined_df['rh95'].values)
+rmse = root_mean_squared_error(joined_df['rh95'].values, joined_df['rhGauss_95'].values)
+mae = mean_absolute_error(joined_df['rh95'].values, joined_df['rhGauss_95'].values)
+rsquared_criteria = r.statistic ** 2
+
+print(f" ---   RESULTS  ---")
+print(f"N points: {len(joined_df['rhGauss_95'].values)}")
+print("Test  R2 : ", rsquared_criteria)
+print("Test RMSE: ", rmse)
+print("Test MAE :", mae)
+print("-------------------------")
+
+create_beautiful_scatterplot(joined_df, title=f"Results at {args.mode} using {args.criteria}", out_file=os.path.join(args.out_dir, "result_plot.png"))'''

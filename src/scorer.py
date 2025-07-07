@@ -15,6 +15,8 @@ from .metric import *
 import matplotlib.pyplot as plt
 import matplotlib
 
+from tqdm import tqdm
+
 # AVAILABLE FRAMEWORK CRITERIA
 possible_criteria = ['wave_pearson', 'wave_spearman', 'wave_distance', 'kl', 'rh_distance', 'terrain']
 
@@ -31,8 +33,9 @@ class CorrectionScorer:
         add_info    : Flag as to whether add info (difference, mean) about every metric defined in 'criteria'
     """
 
-    def __init__(self, original_df=None, criteria='all', ground='GEDI', product='L2A', add_info=True):
+    def __init__(self, original_df=None, crs=None, criteria='all', ground='GEDI', product='L2A', add_info=True):
         self.original_df = original_df
+        self.crs = crs
         self.criteria = []
         self.ground = ground
         self.product = product
@@ -104,6 +107,7 @@ class CorrectionScorer:
             sim_footprints (DataFrame): The input dataframe with scores appended as columns. If it fails
                                         to score, it returns an empty list instead.
         """
+        np.random.seed(0)
 
         # Do not score invalid simulated footprints
         if len(sim_footprints) <= 1:
@@ -129,7 +133,7 @@ class CorrectionScorer:
 
         # Waveform Matching
         sim_footprints = self._waveform_matching(original_footprint, sim_footprints)
-
+        
         if len(sim_footprints) == 0:
             return []
 
@@ -186,6 +190,9 @@ class CorrectionScorer:
         Returns:
             simulated (DataFrame) : The input dataframe with RH CRSSDA column appended.
         """
+
+        np.random.seed(0)
+
         rh_col_types = [f'{i}' for i in range(25, 105, 5)]
 
         original_rh_list = [original[f'rh_{num}'].values[0] for num in rh_col_types]
@@ -218,6 +225,8 @@ class CorrectionScorer:
             simulated (DataFrame) : The input dataframe with RH CRSSDA column appended.
         """
 
+        np.random.seed(0)
+
         if self.ground == 'GEDI':
             # Terrain Matching L2A_1 : GEDI L2A Lowest_Mode - simulated ZG
             simulated_terrain = simulated['ZG']
@@ -249,6 +258,8 @@ class CorrectionScorer:
         Returns:
             simulated (DataFrame) : The input dataframe with Waveform Matching score column(s) appended.
         """
+
+        np.random.seed(0)
 
         original_rxwaveform = [float(x) for x in original['rxwaveform'].values[0].split(",")]
         original_binzero = original['geolocation_elevation_bin0'].values[0]
@@ -312,7 +323,6 @@ class CorrectionScorer:
                                             common_z,
                                             common_z,
                                             f"{original['shot_number_x'].values[0]}-ID_{sim_point['wave_ID']}")
-                
 
         if correlations:
             simulated['waveform_matching'] = correlations
@@ -375,6 +385,10 @@ class CorrectionScorer:
         Returns:
             DataFrame: Normalized column of values.
         """
+        # Check division by zero case
+        if column.max() - column.min() == 0:
+            return pd.Series([1.0] * len(column), index=column.index)
+    
         return 1 - ((column - column.min()) / (column.max() - column.min()))
         
     def _normalize_correl(self, column):
