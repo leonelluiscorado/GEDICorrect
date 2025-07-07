@@ -90,7 +90,7 @@ else:
 print(f"[Correction] Correction of input footprints complete! All files have been saved to {args.out_dir}")
 
 # ----------- Calculate results (RH95 reported vs RH95 simulated) ---------------- #
-
+'''
 print(f"[Result] Calculating results from {args.out_dir}")
 
 files = [f for f in os.listdir(args.out_dir) if (f.endswith(".shp") or f.endswith(".gpkg")) and "CORRECTED" in f]
@@ -120,4 +120,4 @@ print("Test RMSE: ", rmse)
 print("Test MAE :", mae)
 print("-------------------------")
 
-create_beautiful_scatterplot(joined_df, title=f"Results at {args.mode} using {args.criteria}", out_file=os.path.join(args.out_dir, "result_plot.png"))
+create_beautiful_scatterplot(joined_df, title=f"Results at {args.mode} using {args.criteria}", out_file=os.path.join(args.out_dir, "result_plot.png"))'''

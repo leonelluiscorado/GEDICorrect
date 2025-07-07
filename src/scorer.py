@@ -107,6 +107,7 @@ class CorrectionScorer:
             sim_footprints (DataFrame): The input dataframe with scores appended as columns. If it fails
                                         to score, it returns an empty list instead.
         """
+        np.random.seed(0)
 
         # Do not score invalid simulated footprints
         if len(sim_footprints) <= 1:
@@ -132,7 +133,7 @@ class CorrectionScorer:
 
         # Waveform Matching
         sim_footprints = self._waveform_matching(original_footprint, sim_footprints)
-
+        
         if len(sim_footprints) == 0:
             return []
 
@@ -147,91 +148,6 @@ class CorrectionScorer:
         sim_footprints['final_score'] = self._calculate_score(sim_footprints)
 
         return sim_footprints
-
-
-    def score_cluster(self, results, cluster_dict):
-
-        corrected_fpts = []
-
-        # For each cluster
-        with tqdm(total=len(cluster_dict), desc="Applying Clustering correction") as pbar:
-            for main_idx, cluster_indices in cluster_dict.items():
-                score_accumulator = {}  # (x, y) offset → [list of scores]
-
-                for idx in cluster_indices:
-                    df = results[idx]
-                    for _, row in df.iterrows():
-                        offset = row['grid_offset']
-                        score = row['final_score']
-                        shot_number = row['shot_number']
-
-                        if offset not in score_accumulator:
-                            score_accumulator[offset] = []
-
-                        score_accumulator[offset].append(score)
-
-                # Compute mean score for each offset
-                mean_scores = {
-                    offset: sum(scores) / len(scores)
-                    for offset, scores in score_accumulator.items()
-                }
-
-                # Select best offset
-                best_offset = max(mean_scores.items(), key=lambda x: x[1])[0]
-
-                # From the main footprint’s DataFrame, select the row with this offset
-                main_df = results[main_idx]
-                corrected_row = main_df[main_df['grid_offset'] == best_offset]
-
-                if not corrected_row.empty:
-                    corrected_fpts.append(corrected_row.iloc[0])  # single row → Series
-
-                pbar.update(1)
-
-        # Convert list of Series back into a DataFrame
-        corrected_df = gpd.GeoDataFrame(corrected_fpts, crs=self.crs, geometry='geometry')
-        corrected_df = corrected_df.reset_index(drop=True)
-
-        return corrected_df
-
-
-    def score_cluster_parallel(self, cluster, results):
-
-        main_id, cluster_ids = cluster
-
-        corrected_fpts = []
-        
-        score_accumulator = {}  # (x, y) offset → [list of scores]
-
-        for idx in cluster_ids:
-            df = results[idx]
-            for _, row in df.iterrows():
-                offset = row['grid_offset']
-                score = row['final_score']
-                shot_number = row['shot_number']
-
-                if offset not in score_accumulator:
-                    score_accumulator[offset] = []
-
-                score_accumulator[offset].append(score)
-
-        # Compute mean score for each offset
-        mean_scores = {
-            offset: sum(scores) / len(scores)
-            for offset, scores in score_accumulator.items()
-        }
-
-        # Select best offset
-        best_offset = max(mean_scores.items(), key=lambda x: x[1])[0]
-
-        # From the main footprint’s DataFrame, select the row with this offset
-        main_df = results[main_id]
-        corrected_row = main_df[main_df['grid_offset'] == best_offset]
-
-        if not corrected_row.empty:
-            return corrected_row.iloc[0]  # single row → Series
-
-        return None
 
 
     def _rh_correlation(self, original, simulated):
@@ -274,6 +190,9 @@ class CorrectionScorer:
         Returns:
             simulated (DataFrame) : The input dataframe with RH CRSSDA column appended.
         """
+
+        np.random.seed(0)
+
         rh_col_types = [f'{i}' for i in range(25, 105, 5)]
 
         original_rh_list = [original[f'rh_{num}'].values[0] for num in rh_col_types]
@@ -306,6 +225,8 @@ class CorrectionScorer:
             simulated (DataFrame) : The input dataframe with RH CRSSDA column appended.
         """
 
+        np.random.seed(0)
+
         if self.ground == 'GEDI':
             # Terrain Matching L2A_1 : GEDI L2A Lowest_Mode - simulated ZG
             simulated_terrain = simulated['ZG']
@@ -337,6 +258,8 @@ class CorrectionScorer:
         Returns:
             simulated (DataFrame) : The input dataframe with Waveform Matching score column(s) appended.
         """
+
+        np.random.seed(0)
 
         original_rxwaveform = [float(x) for x in original['rxwaveform'].values[0].split(",")]
         original_binzero = original['geolocation_elevation_bin0'].values[0]
@@ -400,7 +323,6 @@ class CorrectionScorer:
                                             common_z,
                                             common_z,
                                             f"{original['shot_number_x'].values[0]}-ID_{sim_point['wave_ID']}")
-                
 
         if correlations:
             simulated['waveform_matching'] = correlations
@@ -463,6 +385,10 @@ class CorrectionScorer:
         Returns:
             DataFrame: Normalized column of values.
         """
+        # Check division by zero case
+        if column.max() - column.min() == 0:
+            return pd.Series([1.0] * len(column), index=column.index)
+    
         return 1 - ((column - column.min()) / (column.max() - column.min()))
         
     def _normalize_correl(self, column):

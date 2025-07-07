@@ -12,6 +12,7 @@ from shapely.geometry import box, Point, Polygon
 from tqdm import tqdm
 
 import os
+from memory_profiler import profile
 
 def create_buffer(footprint, distance):
     """
@@ -293,101 +294,102 @@ def parse_txt(origin_footprint, filename):
 
     return df[cols]
 
-
-def cluster_footprints(sim_fpts, method='single', time_window=0.215):
-    '''
-    Groups footprints into clusters based on the time_window.
+def cluster_footprints(df, method='single', time_window=0.215):
+    """
+    Builds individual clusters around each footprint based on 'delta_time' window and optional beam match based on 'method'.
+    Each cluster is keyed by a footprint shot_number and contains a list of nearby shot_numbers.
 
     Args:
-        processed_fpts (list): List of Dataframes containing the simulated footprints for each input footprint
-        time_window (float): The time_window (in Hz) to calculate min and max delta_times to group footprints
-
+        df (DataFrame): DataFrame of simulated and scored footprints.
+        method (str): BEAM selection method. Any method other than 'single' will select all BEAMS, whereas 'single' selects only
+                      footprints that are close but only for their BEAM. Defaults to 'single'.
+        time_window (float): Time window in Hz for GEDI footprint clustering. Defaults to 0.215 Hz.
+    
     Returns:
-        dict of clusters
-    '''
+        clusters (dict): Dictionary of clusters, where for each footprint (key), contains a list of all neighboring
+                         footprints (value).
+    """
+    # Ensure deterministic order
+    df = df.sort_values(by=['BEAM', 'geolocation_delta_time', 'shot_number']).reset_index(drop=True)
 
-    # Create summary table with metadata
-    metadata = []
-    for idx, df in enumerate(sim_fpts):
-
-        # Ignore size one datasets
-        if len(df) <= 1:
-            continue
-
-        row = df.iloc[0]
-        metadata.append({
-            'index': idx,
-            'geolocation_delta_time': row['geolocation_delta_time'],
-            'BEAM': row['BEAM']
-        })
-
-    meta_df = pd.DataFrame(metadata).sort_values(by='geolocation_delta_time').reset_index(drop=True)
+    delta_times = df['geolocation_delta_time'].values
+    beams = df['BEAM'].astype(str).values
+    shot_numbers = df['shot_number'].astype(str).values
 
     clusters = {}
 
-    for i, row in meta_df.iterrows():
-        current_idx = row['index']
-        current_time = row['geolocation_delta_time']
-        current_beam = row['BEAM']
+    for i in range(len(delta_times)):
+        t_i = delta_times[i]
+        sn_i = shot_numbers[i]
+        beam_i = beams[i]
 
-        # Select candidates within ± time_window
-        lower = current_time - time_window
-        upper = current_time + time_window
+        # Find all indices within time window
+        in_window = (np.abs(delta_times - t_i) <= time_window)
 
         if method == 'single':
-            condition = (
-                (meta_df['geolocation_delta_time'] >= lower) &
-                (meta_df['geolocation_delta_time'] <= upper) &
-                (meta_df['BEAM'] == current_beam)
-            )
-        else:  # 'multi'
-            condition = (
-                (meta_df['geolocation_delta_time'] >= lower) &
-                (meta_df['geolocation_delta_time'] <= upper)
-            )
+            in_window &= (beams == beam_i)
 
-        cluster_indices = meta_df[condition]['index'].tolist()
+        cluster_members = shot_numbers[in_window].tolist()
 
-        # Discard size 1 clusters
-        if len(cluster_indices) > 1:
-            clusters[current_idx] = cluster_indices
+        if len(cluster_members) > 1:
+            clusters[sn_i] = sorted(cluster_members)  # Sort for deterministic output
 
-    return dict(sorted(clusters.items()))
+    return clusters
 
 
 def annotate_clusters(processed_fpts, cluster_dict):
+    """
+    Add Clustering information to the processed footprints dataframe, such as cluster bounds (in lat/lon format)
 
-    for cluster_id, cluster in cluster_dict.items():
+    Args:
+        processed_fpts (list): List of DataFrames of all processed scored footprints
+        cluster_dict (dict): A Dictionary containing all of the clusters. Consists of (Main Shot_number) : List of neighboring shot_numbers pairs.
 
-        # Discard size 1 clusters
-        if len(cluster) == 1:
+    Returns:
+        list: Updated processed_fpts list with information about each footprint's cluster.
+    """
+
+    fpt_dict = {df.iloc[0]['shot_number']: df for df in processed_fpts if not len(df) <= 1 and 'shot_number' in df.columns}
+
+    for cluster_id, shot_list in cluster_dict.items():
+        if len(shot_list) <= 1:
             continue
 
-        # Get First and Last footprints of cluster
-        first_id, last_id = cluster[0], cluster[-1]
+        first_id, last_id = shot_list[0], shot_list[-1]
+        first_cluster_fpt = fpt_dict.get(first_id)
+        last_cluster_fpt = fpt_dict.get(last_id)
 
-        first_cluster_fpt = processed_fpts[first_id]
-        last_cluster_fpt = processed_fpts[last_id]
+        if first_cluster_fpt is None or last_cluster_fpt is None:
+            continue
 
-        # Search (0, 0) on grid, which is the position of the original footprint
+        if len(first_cluster_fpt) <= 1 or len(last_cluster_fpt) <= 1:
+            continue
+
         first_original_index = first_cluster_fpt[first_cluster_fpt['grid_offset'] == (0, 0)]
         last_original_index = last_cluster_fpt[last_cluster_fpt['grid_offset'] == (0, 0)]
 
-        # Get latitude and longitude coordinates from the footprint (0, 0) on grid
+        if first_original_index.empty or last_original_index.empty:
+            continue
+
         lat1, lon1 = first_original_index['lat'].values[0], first_original_index['lon'].values[0]
         lat2, lon2 = last_original_index['lat'].values[0], last_original_index['lon'].values[0]
         cluster_bounds = ((lat1, lon1), (lat2, lon2))
 
-        for fpt in cluster:
-            df = processed_fpts[cluster_id].copy()
-            df['cluster_id'] = cluster_id
-            df['cluster_bounds'] = [cluster_bounds] * len(df)
-            processed_fpts[cluster_id] = df
+        df = fpt_dict.get(cluster_id)
+        if df is None or len(df) <= 1:
+            continue
+        
+        df['cluster_bounds'] = [cluster_bounds] * len(df)
+        fpt_dict[cluster_id] = df
 
-    return processed_fpts
+    return list(fpt_dict.values())
+
 
 
 def build_cluster_rectangles(processed_fpts, cluster_dict, crs="EPSG:4326", width_meters=25):
+    """
+    WIP
+    """
     
     from shapely.geometry import Polygon
     from pyproj import Geod, CRS, Transformer
@@ -442,6 +444,16 @@ def build_cluster_rectangles(processed_fpts, cluster_dict, crs="EPSG:4326", widt
 
 
 def add_cluster_stats(fpts):
+    """
+    Adds final information about the cluster and offset of the final corrected footprint.
+
+    Args:
+        fpts (pandas.DataFrame): DataFrame containing the corrected footprints.
+
+    Returns:
+        pd.DataFrame: Updated input DataFrame with information about correction for each footprint.
+    """
+
     corrected_clusters = fpts.copy()
 
     # X and Y offsets

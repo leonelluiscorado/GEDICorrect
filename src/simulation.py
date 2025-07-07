@@ -23,6 +23,20 @@ def init_random_seed():
     np.random.seed(seed)
 
 
+def generate_fixed_points(centroid_x, centroid_y, num_points):
+    """
+    Generates a number of fixed points on a single coordinate.
+    Args:
+        centroid_x (float): Centroid Lat.
+        centroid_y (float): Centroid Lon.
+        num_points (int): Number of points to simulated on a single coordinate.
+
+    Returns:
+        list: List of Point.
+    """
+    return [Point(centroid_x, centroid_y) for _ in range(num_points)]
+
+
 def generate_random_points(centroid_x, centroid_y, num_points, max_radius=12.5, min_dist=1.0):
     """
     Generates a random number of 'num_points' points around (x,y) coordinates of a footprint
@@ -116,9 +130,8 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
                 offset_x = footprint['geometry'].x + offset[0]
                 offset_y = footprint['geometry'].y + offset[1]
                 f.write(f"{offset_x} {offset_y}\n")
-
     ## Generate txt list of coordinates from random points
-    if num_points:
+    elif num_points:
         ## Generate random points around footprint
         rand_points = generate_random_points(footprint['geometry'].x, footprint['geometry'].y, num_points=num_points, max_radius=max_radius, min_dist=min_dist)
 
