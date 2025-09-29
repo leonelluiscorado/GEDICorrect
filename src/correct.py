@@ -339,7 +339,7 @@ class GEDICorrect:
                 gc.collect()
 
 
-    def score_clusters_sequential(cluster_dict, results_dict):
+    def score_clusters_sequential(self, cluster_dict, results_dict):
         """
         Sequential version of cluster scoring. Calculates the mean scores of each grid offset for each cluster
         which then finds the best offset for each footprint.
