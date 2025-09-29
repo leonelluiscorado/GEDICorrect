@@ -319,6 +319,7 @@ class GEDICorrect:
 
             # Convert selected rows to a GeoDataFrame for saving as shapefile
             out_df = gpd.GeoDataFrame(selected_rows, crs=self.crs).set_geometry('geometry')
+            out_df = out_df.drop(columns=['FSIGMA'])
             save_out_filename = filename.split('/')[-1]
             out_df.to_file(os.path.join(self.out_dir, 'BEAM_' + save_out_filename))
 
@@ -716,11 +717,14 @@ class GEDICorrect:
         Returns:
             None
         '''
-        score_dict = {} if not self.use_parallel else Manager().dict()
+        
         lock = None if not self.use_parallel else Manager().Lock() # Used to lock global variable of best offset
 
         # Iterate through each gedi file
         for filename, footprint_df in self.gedi_granules.items():
+
+            score_dict = {} if not self.use_parallel else Manager().dict()
+            
             print(f"[Simulate] Correcting granule {filename}")
             print(f"[Simulate] Criteria: {self.criteria}")
 
