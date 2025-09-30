@@ -10,6 +10,7 @@ from scipy.spatial import ConvexHull
 import laspy
 from shapely.geometry import box, Point, Polygon
 from tqdm import tqdm
+from pyproj import CRS
 
 import os
 from memory_profiler import profile
@@ -72,7 +73,7 @@ def generate_grid(x_max, y_max, step=1):
     return offsets
 
 
-def get_las_extents(las_files_dir, algorithm="convex"):
+def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
     """
     Builds extent bounds in every .las file inside **las_files_dir**
     The **algorithm** argument selects the bounding box strategy between 'simple' (bounding box of min and max)
@@ -105,7 +106,8 @@ def get_las_extents(las_files_dir, algorithm="convex"):
 
     # Parse CRS and return it
     with laspy.open(os.path.join(las_files_dir, las_files[0])) as las:
-        crs = las.header.parse_crs()
+        las_crs = las.header.parse_crs()
+        crs = normalize_crs(las_crs, explicit_epsg)
         print(f"LAS CRS is {crs}")
 
     if len(shp_file) != 0:
@@ -161,6 +163,34 @@ def get_las_extents(las_files_dir, algorithm="convex"):
     print(f"ALS Bounds Shapefile saved at: {shp_output_path}")
 
     return las_extents, crs
+
+def normalize_crs(crs, epsg_code=None):
+    """
+    This function handles the (probable) CRS incompatibility that ALS may provide.
+    Overrides the "broken" ALS CRS with user input EPSG, if provided.
+    """
+    if epsg_code:
+        try:
+            return CRS.from_user_input(epsg_code)
+        except Exception:
+            raise ValueError(f"Invalid CRS override: {epsg_code}")
+
+    if crs is None:
+        raise ValueError("LAS file has no CRS. Supply --als_crs and set the argument as epsg_code.")
+
+    epsg = crs.to_epsg()
+    if epsg:
+        return CRS.from_epsg(epsg)
+
+    try:
+        simplified = CRS.from_wkt(crs.to_wkt("WKT1_GDAL"))
+        epsg = simplified.to_epsg()
+        if epsg:
+            return CRS.from_epsg(epsg)
+    except Exception:
+        raise ValueError("CRS could not be defined. Supply --als_crs and set the argument as epsg_code.")
+
+    return crs
 
 
 def find_intersecting_las_files(footprint_buffer, las_extents):
