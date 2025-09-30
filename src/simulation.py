@@ -149,7 +149,7 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
 
     ## Simulate waveforms
     try:
-        exit_code = subprocess.run(["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", "3763", "-ground", "-maxBins", nbins, "-output", h5_file_dir], timeout=60, stdout=subprocess.DEVNULL)
+        exit_code = subprocess.run(["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", str(crs), "-ground", "-maxBins", nbins, "-output", h5_file_dir], timeout=60, stdout=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         print(f"gediRat timeout at footprint {shot_number}")
         return []

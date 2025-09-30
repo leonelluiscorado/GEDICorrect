@@ -39,9 +39,9 @@ parser.add_argument('--grid_size', required=False, help='Specifies the size of t
 
 parser.add_argument('--grid_step', required=False, help='Specifies the step size for the grid for “Orbit-level” or “Beam-level” correction methods.', type=int, default=1)
 
-parser.add_argument('--n_points', required=False, help='Number of points to simulate around each input footprint', type=int, default=100)
+parser.add_argument('--als_crs', required=False, help='(Optional) Set the EPSG code of ALS if it does not have.', type=str, default=None)
 
-parser.add_argument('--radius', required=False, help='Maximum value for radius to simulate points around each original footprint', type=float, default=12.5)
+parser.add_argument('--als_algorithm', required=False, help='(Optional) Set the ALS bounding algorithm. Default is convex, which builds tight-fitting boundary. \'simple\' creates a simple bounding box around the ALS.', type=str, default='convex')
 
 parser.add_argument('--min_dist', required=False, help='Minimum distance between simulated points around each original footprint', type=float, default=1.0)
 
@@ -76,6 +76,8 @@ correct = GEDICorrect(granule_list=input_granules,
                       criteria=args.criteria,
                       save_sim_points=args.save_sim_points,
                       save_origin_location=args.save_origin_location,
+                      als_crs=args.als_crs,
+                      als_algorithm=args.als_algorithm,
                       use_parallel=args.parallel,
                       n_processes=args.n_processes)
 

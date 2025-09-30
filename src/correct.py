@@ -55,6 +55,8 @@ class GEDICorrect:
                  criteria='kl',
                  save_sim_points=False,
                  save_origin_location=False,
+                 als_crs=None,
+                 als_algorithm='convex',
                  use_parallel=False,
                  n_processes=None):
         
@@ -68,6 +70,8 @@ class GEDICorrect:
         self.n_processes = n_processes
         self.criteria = criteria
         self.random = random
+        self.als_crs = str(als_crs).split(":")[-1] if als_crs else None
+        self.als_algorithm = als_algorithm
 
         self.gedi_granules = {}
 
@@ -151,7 +155,7 @@ class GEDICorrect:
 
         ## Open LAS Files and check Coordinate System
         try:
-            self.las_extents, self.crs = get_las_extents(las_files_dir=self.las_dir)
+            self.las_extents, self.crs = get_las_extents(las_files_dir=self.las_dir, explicit_epsg=self.als_crs, algorithm=self.als_algorithm)
             assert len(self.las_extents) != 0  # Check if opened something
         except:
             raise Exception("[Setup] Error opening LAS files. Check above exception for more information. Aborting")
