@@ -6,10 +6,12 @@ import os
 import tempfile
 import geopandas as gpd
 import pandas as pd
+from collections import defaultdict
 
 from .data_process import *
 from .simulation import process_all_footprints, init_random_seed, process_all_footprints
 from .scorer import CorrectionScorer
+from .dataclass import ScoredFootprint
 
 from tqdm import tqdm
 
@@ -78,24 +80,14 @@ class GEDICorrect:
         # Perform setup check: ALS bounding and GEDI
         self.setup_status = self._setup()
 
-    @staticmethod
-    def init_results_pool(results_data):
-        GEDICorrect._shared_results = {df.iloc[0]['shot_number']: df
-                                       for df in results_data if not df.empty}
 
-    @staticmethod
-    def clear_results_pool():
-        global _shared_results
-        GEDICorrect._shared_results = None
-
-    def simulate(self, grid_size=15, grid_step=1, n_points=100, max_radius=12.5, min_dist=1.0):
+    def simulate(self, grid_size=15, grid_step=1):
         """
         This function performs the correction sequence on given GEDI files to class instance
 
         Args:
-            n_points: Number of points to simulate around original footprint
-            max_radius: Maximum radius distance to place points
-            min_dist: Minimum distance between each simulated point
+            grid_size: Size of the grid to determine the number of points to simulate around original footprint
+            grid_step: Step size of grid points around original footprint
 
         Returns:
             None
@@ -105,7 +97,6 @@ class GEDICorrect:
             # Class not properly setup
             raise Exception("[Simulate] Class not properly setup due to error in GEDI Granules or",
                               " opening LAS files. You must create another instance of this class")
-            return
 
         ## Create temporary directory for temp files
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -119,22 +110,45 @@ class GEDICorrect:
             for als_file in als_list:
                 las_txt_file.write(f"{als_file}\n")
 
-        ## Always simple a middle point
+        ## Always sample a middle point on the grid
         if not grid_size % 2:
             grid_size += 1
         
-        ## Mode Selection
-        if self.mode == "orbit":
-            print("[Setup] Correcting at the ORBIT LEVEL")
-            self._orbit_simulate(grid_size=grid_size, grid_step=grid_step)
+        # Generate grid of points
+        offsets = generate_grid(grid_size, grid_size, step=grid_step)
 
-        if self.mode == "beam":
-            print("[Setup] Correcting at the BEAM LEVEL")
-            self._beam_simulate(grid_size=grid_size, grid_step=grid_step)
+        # Correct every input file
+        for filename, footprint_df in self.gedi_granules.items():
 
-        if self.mode == "footprint":
-            print("[Setup] Correcting at the FOOTPRINT LEVEL")
-            self._footprint_simulate(grid_size=grid_size, grid_step=grid_step)
+            # Spawn Scorer for dataset
+            scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria)
+
+            ## Simulate and Score all points
+            processed_footprints = self._sim_and_score(footprint_df=footprint_df, scorer=scorer, offsets=offsets)
+
+            # Select correction mode
+            if self.mode == "orbit":
+                print("[GEDICorrect] Correcting at the ORBIT LEVEL")
+                best_offsets = self._orbit_correct(processed_footprints)
+
+            if self.mode == "beam":
+                print("[GEDICorrect] Correcting at the BEAM LEVEL")
+                best_offsets = self._beam_correct(processed_footprints)
+
+            if self.mode == "footprint":
+                print("[GEDICorrect] Correcting at the FOOTPRINT LEVEL")
+                best_offsets = self._footprint_correct(processed_footprints)
+
+            if not len(best_offsets):
+                print(f"[GEDICorrect] Error in correcting file {filename}. Try again.")
+                continue
+
+            ## Output step
+            # Resimulate best offset points for output
+            corrected_rows = self._resimulate_best_offsets(best_offsets, footprint_df, scorer)
+
+            # Save corrected file
+            self._save_outputs(results=corrected_rows, filename=filename)
 
         # Clean Temp Dir
         del self.temp_dir
@@ -214,8 +228,7 @@ class GEDICorrect:
 
         Consists of three output modes:
             1 - Output a file of simulations at original location of each GEDI footprint;
-            2 - Output a file of all simulations around each GEDI footprint;
-            3 - Output a file of the corrected (highest scored) simulated footprints.
+            2 - Output a file of the corrected (highest scored) simulated footprints.
 
         Args:
             results (list): A list of DataFrames, each containing scored simulated GEDI footprints for a
@@ -230,657 +243,280 @@ class GEDICorrect:
             None
         """
 
-        if self.save_origin_location:
-            # Save simulated footprint at original location
-            origin_loc = []
-            for gpd_df in results:
-                if len(gpd_df) != 0:
-                    # RXWAVECOUNT array to str for output purposes
-                    gpd_df['RXWAVECOUNT'] = gpd_df['RXWAVECOUNT'].astype(str)
+        rows = []
 
-                    origin_loc.append(gpd_df.loc[0])
+        # Transform each footprint dataframe in a format that GeoDataFrame expects
+        for df in results:
+            if df.empty:
+                continue
+            row = df.iloc[0]
+            rows.append(row.to_dict()) ## to dictionary
 
-            # Save original location dataframe
-            origin_df = gpd.GeoDataFrame(origin_loc, crs=self.crs).set_geometry('geometry')
-            out_filename = filename.split('/')[-1]
-            origin_df = origin_df.drop(columns=['FSIGMA'])
-            origin_df.to_file(os.path.join(self.out_dir, 'ORIGINLOC_'+out_filename))
+        if rows:
+            out_df = gpd.GeoDataFrame(rows, crs=self.crs, geometry="geometry")
 
+            out_df["RXWAVECOUNT"] = out_df["RXWAVECOUNT"].astype(str)
+            out_df["grid_offset"] = out_df["grid_offset"].astype(str)
 
-        if self.save_sim_points:
-            # Save sim points to SHP file
-            save_df = []
-            for gpd_df in results:
-                if len(gpd_df) != 0:
-                    # RXWAVECOUNT array to str for output purposes
-                    gpd_df['RXWAVECOUNT'] = gpd_df['RXWAVECOUNT'].apply(str)
-                    
-                    if not self.random:
-                        gpd_df['grid_offset'] = gpd_df['grid_offset'].apply(str)
-                        gpd_df['cluster_bounds'] = gpd_df['cluster_bounds'].apply(str)
+            out_df.drop(columns=["FSIGMA"], inplace=True, errors="ignore") # Drop FSIGMA Column (incompatible with final Dataframe)
 
-                    save_df.append(gpd_df)
+            filename = filename.split("/")[-1]
 
-            # Append to to be saved dataframe
-            sim_save_df = gpd.GeoDataFrame(pd.concat(save_df))
-            sim_save_df.crs = self.crs
-            sim_save_df = sim_save_df.drop(columns=['FSIGMA']) 
-            sim_save_out_filename = filename.split('/')[-1]
-            sim_save_df.to_file(os.path.join(self.out_dir, 'SIMPOINTS_'+sim_save_out_filename))
+            if self.mode == "orbit":
+                out_df.to_file(os.path.join(self.out_dir, f"ORBIT_{filename}"))
 
-        ## Save correct (highest scored) simulated footprints
-        if offset:
-            # Orbit-Level mode
-            selected_rows = []  # List to hold the selected rows from each DataFrame
+            if self.mode == "beam":
+                out_df.to_file(os.path.join(self.out_dir, f"BEAM_{filename}"))
 
-            # Loop over each DataFrame in the results list
-            for df in results:
-                # Filter the rows that match the best offset
-                filtered_df = df[df['grid_offset'] == offset]
+            if self.mode == "footprint":
+                out_df.to_file(os.path.join(self.out_dir, f"FOOTPRINT_{filename}"))
 
-                # Check if any rows match the best offset
-                if not filtered_df.empty:
-                    # Extract the first matching row as a Series
-                    best_row = filtered_df.iloc[0]
-                    # Append the row (as a Series) to the list
-                    selected_rows.append(best_row)
-
-            # RXWAVECOUNT array to string
-            for footprint in selected_rows:
-                footprint['RXWAVECOUNT'] = str(footprint['RXWAVECOUNT'])
-                footprint['grid_offset'] = str(footprint['grid_offset'])
-
-            out_df = gpd.GeoDataFrame(selected_rows, crs=self.crs, geometry='geometry')
-            out_df = out_df.drop(columns=['FSIGMA'])
-            save_out_filename =  filename.split('/')[-1]
-            out_df.to_file(os.path.join(self.out_dir, 'ORBIT_'+save_out_filename))
-
-        elif beam_offset:
-            # Beam-Level mode
-            selected_rows = []  # List to hold the selected rows from each DataFrame
-
-            # Loop over each DataFrame in the results list
-            for df in results:
-                # Get the BEAM ID for the current footprint
-                beam_id = df['BEAM'].iloc[0]  # Assuming each DataFrame has a single BEAM ID
-                best_offset = beam_offset.get(beam_id)
-
-                if best_offset is not None:
-                    # Filter the rows that match the best offset for this beam
-                    filtered_df = df[df['grid_offset'] == best_offset].copy()
-
-                    # Check if any rows match the best offset
-                    if not filtered_df.empty:
-                        # Extract the first matching row as a Series
-                        best_row = filtered_df.iloc[0].copy()
-                        # Append the row (as a Series) to the list
-                        selected_rows.append(best_row)
-
-            # RXWAVECOUNT array to string, grid_offset to string
-            for footprint in selected_rows:
-                footprint['RXWAVECOUNT'] = str(footprint['RXWAVECOUNT'])
-                footprint['grid_offset'] = str(footprint['grid_offset'])
-
-            # Convert selected rows to a GeoDataFrame for saving as shapefile
-            out_df = gpd.GeoDataFrame(selected_rows, crs=self.crs).set_geometry('geometry')
-            out_df = out_df.drop(columns=['FSIGMA'])
-            save_out_filename = filename.split('/')[-1]
-            out_df.to_file(os.path.join(self.out_dir, 'BEAM_' + save_out_filename))
-
-        else:
-            # Footprint-Level mode
-            # Already selected best footprints in a geodataframe
-            if not cluster_results is None:
-                cluster_results['RXWAVECOUNT'] = cluster_results['RXWAVECOUNT'].apply(str)
-                cluster_results['grid_offset'] = cluster_results['grid_offset'].apply(str)
-                cluster_results['cluster_bounds'] = cluster_results['cluster_bounds'].apply(str)
-                cluster_results.drop(columns=['FSIGMA'], inplace=True)
-
-                ## Save corrected footprints to GPKG
-                #out_df = gpd.GeoDataFrame(final_df, crs=self.crs).set_geometry('geometry')
-                out_filename = filename.split('/')[-1]
-                cluster_results.to_file(os.path.join(self.out_dir, 'CORRECTED_'+out_filename))
-                del cluster_results
-                gc.collect()
+        return
 
 
-    def score_clusters_sequential(self, cluster_dict, results_dict):
-        """
-        Sequential version of cluster scoring. Calculates the mean scores of each grid offset for each cluster
-        which then finds the best offset for each footprint.
+    def _orbit_correct(self, summaries):
+        '''
+        Selects the best offset at the orbit-level for a (Simulated and Scored) GEDI file.
+
+        Args:
+            grid_size (int): Size of search grid around each reported footprint. Final size of grid is
+                             'Grid_Size x Grid_Size'
+            grid_step (int): Distance (in meters) between each point in grid. Defaults to 1 meter.
+
+        Returns:
+            None
+
+        '''
+        per_offset_scores = defaultdict(list)
+        for summary in summaries:
+            for offset, score in summary.offset_scores:
+                per_offset_scores[offset].append(score)
+
+        if not per_offset_scores:
+            return {}
+
+        best_offset = max(
+            per_offset_scores.items(),
+            key=lambda item: sum(item[1]) / len(item[1]),
+        )[0]
+
+        return {summary.shot_number: best_offset for summary in summaries}
+    
+    def _beam_correct(self, footprints):
+        """Select the best offset at the beam-level for each footprint inside a beam"""
         
-        Args:
-            cluster_dict (dict): Dictionary where keys are main shot_numbers and values are lists of cluster member shot_numbers.
-            results_dict (dict): Dictionary mapping shot_numbers to their corresponding GeoDataFrames.
+        # Build BEAM dictionary
+        per_beam = defaultdict(lambda: defaultdict(list))
 
-        Returns:
-            list: List of best-scored GeoDataFrame rows (one per cluster).
-        """
-        output_rows = []
+        for footprint in footprints:
+            for offset, score in footprint.offset_scores:
+                per_beam[footprint.beam][offset].append(score)
 
-        # For every cluster
-        for main_sn, cluster_sns in cluster_dict.items():
+        if not per_beam:
+            return {}
 
-            # there will be a score accumulator
-            score_accumulator = {}
-
-            # which is then updated for each offset of the grid with its final_score
-            for sn in cluster_sns:
-                df = results_dict.get(sn)
-                if df is None or len(df) <= 1:
-                    continue
-                for _, row in df.iterrows():
-                    offset = row['grid_offset']
-                    score = row['final_score']
-                    score_accumulator.setdefault(offset, []).append(score)
-
-            if not score_accumulator:
+        beam_best_offset = {}
+        for beam, scores_dict in per_beam.items():
+            if not scores_dict:
                 continue
+            beam_best_offset[beam] = max(
+                scores_dict.items(),
+                key=lambda item: sum(item[1]) / len(item[1]),
+            )[0]
 
-            # Compute mean scores rounded to 5 decimals of the cluster
-            mean_scores = {
-                offset: round(sum(scores) / len(scores), 5)
-                for offset, scores in score_accumulator.items()
-            }
+        footprint_offsets = {}
+        for footprint in footprints:
+            offset = beam_best_offset.get(footprint.beam)
+            if offset is not None:
+                footprint_offsets[footprint.shot_number] = offset
 
-            # Get best offset of the cluster
-            best_offset = max(mean_scores.items(), key=lambda x: x[1])[0]
-
-            # Set best offset of the cluster for the main footprint of the cluster
-            main_df = results_dict.get(main_sn)
-            if main_df is None or len(main_df) <= 1:
-                continue
-            
-            # Move centroid footprint to its cluster best offset
-            corrected_row = main_df[main_df['grid_offset'] == best_offset]
-
-            if not corrected_row.empty:
-                output_rows.append(corrected_row.iloc[0])
-
-        return output_rows
-
-
-    @staticmethod
-    def score_cluster_parallel(cluster):
-        """
-        Parallel version of cluster scoring. Calculates the mean scores of each grid offset for each cluster
-        which then finds the best offset for each footprint.
-
-        Args:
-            cluster (tuple): Cluster tuple consisting of (Main footprint shot_number, List of neighboring Shot_numbers)
-
-        Returns:
-            pd.Series or None: The row with the highest mean 'final_score' for corresponding Main Shot_number, or None if footprint does not exist.
-        """
-        main_sn, cluster_sns = cluster
-        score_accumulator = {}
-
-        for sn in cluster_sns:
-            df = GEDICorrect._shared_results.get(sn)
-            if df is None or len(df) <= 1:
-                continue
-            for _, row in df.iterrows():
-                offset = row['grid_offset']
-                score = row['final_score']
-                score_accumulator.setdefault(offset, []).append(score)
-
-        if not score_accumulator:
-            return None
-
-        mean_scores = {
-            offset: round(sum(scores) / len(scores), 5)
-            for offset, scores in score_accumulator.items()
-        }
-
-        best_offset = max(mean_scores.items(), key=lambda x: x[1])[0]
-        main_df = GEDICorrect._shared_results.get(main_sn)
-
-        if main_df is None or len(main_df) <= 1:
-            return None
-
-        corrected_row = main_df[main_df['grid_offset'] == best_offset]
-
-        if not corrected_row.empty:
-            return corrected_row.iloc[0]
-
-        return None
+        return footprint_offsets
     
 
+    def _footprint_correct(self, footprints):
+        """Select the best offset at the footprint-level using time-window clustering"""
 
-    def _footprint_simulate(self, grid_size=15, grid_step=1, time_window=0.215):
-        """
-        Simulates and Scores at the footprint-level all of the input GEDI granules.
-        User can select parallelization. After processing every single input GEDI orbit
-        it outputs all simulated, original and corrected (highest scored) footprints in
-        files using the '_save_outputs()' function.
+        if not footprints:
+            return {}
 
-        For this footprint-level approach, it uses a "Clustering" Algorithm, which clusters
-        every footprint with neighboring footprints according to the ISS vibration rate.
-
-        Args:
-            grid_size (int): Size of search grid around each reported footprint. Final size of grid is
-                             'Grid_Size x Grid_Size'
-            grid_step (int): Distance (in meters) between each point in grid. Defaults to 1 meter.
-
-            time_window (float): Vibration rate in Hz of the GEDI platform. Defaults to 0.215 Hz.
-
-        Returns:
-            None
-        """
-        
-        # Generate search grid
-        offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step)
-
-        # Loop (Simulation -> Scoring -> Output) for each input GEDI file
-        for filename, footprint_df in self.gedi_granules.items():
-            print(f"[Simulate] Correcting granule {filename}")
-
-            # Spawn Scorer
-            scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria)
-            footprints = [row for _, row in footprint_df.iterrows()]
-
-            processed_footprints = []
-            results = []
-
-            if self.use_parallel:
-                print(f"[Simulate] Running in parallel mode with {self.n_processes} processes")
-                with multiprocessing.Pool(self.n_processes, maxtasksperchild=5, initializer=init_random_seed) as pool:
-                    
-                    partial_func_processing = partial(process_all_footprints,
-                                                    temp_dir=self.temp_dir.name,
-                                                    las_dir=self.las_dir,
-                                                    original_df=footprint_df,
-                                                    crs=str(self.crs).split(":")[-1],
-                                                    grid=offsets)
-
-                    with tqdm(total=len(footprints), desc="Processing Footprints") as pbar:
-                        for processed in pool.imap_unordered(partial_func_processing, footprints):
-                            processed_footprints.append(processed)
-                            pbar.update(1)
-
-                filtered_processed_footprints = [f for f in processed_footprints if not (len(f) == 1 and type(f[0]) == int)]
-                del processed_footprints
-
-                partial_func_correction = partial(scorer.score)
-                with multiprocessing.Pool(self.n_processes, maxtasksperchild=5, initializer=init_random_seed) as pool:
-                    with tqdm(total=len(filtered_processed_footprints), desc="Correcting Footprints") as pbar:
-                        for corrected in pool.imap_unordered(partial_func_correction, filtered_processed_footprints):
-                            results.append(corrected)
-                            pbar.update(1)
-
-                results = [df for df in results if len(df) > 1]
-
-                del partial_func_correction
-                gc.collect()
-
-            else:
-                print(f"[Simulate] Running in sequential mode")
-
-                footprints = [row for row in footprints]
-
-                for fpt in tqdm(footprints, desc="Processing Footprints"):
-                    processed_footprints.append(process_all_footprints(
-                        fpt, self.temp_dir.name,
-                        las_dir=self.las_dir,
-                        original_df=footprint_df,
-                        crs=str(self.crs).split(":")[-1],
-                        grid=offsets))
-
-                filtered_processed_footprints = [f for f in processed_footprints if not (len(f) == 1 and type(f[0]) == int)]
-
-                for fpt in tqdm(filtered_processed_footprints, desc="Correcting Footprints"):
-                    if len(fpt) > 1:
-                        results.append(scorer.score(fpt))
-
-            # Sort final simulated and scored list by shot_number
-            results = sorted(results, key=lambda df: df.iloc[0]['shot_number'])
-
-            # Build small dataframe for the clusterization process
-            cluster_df = pd.DataFrame([
+        # Build a dataframe the clustering function expects
+        cluster_df = pd.DataFrame(
             {
-                'shot_number': df.iloc[0]['shot_number'],
-                'geolocation_delta_time': df.iloc[0]['geolocation_delta_time'],
-                'BEAM': df.iloc[0]['BEAM']
+                "shot_number": [str(s.shot_number) for s in footprints],
+                "geolocation_delta_time": [float(s.delta_time) for s in footprints],
+                "BEAM": [str(s.beam) for s in footprints],
             }
-                for df in results if len(df) > 1
-            ])
+        ).sort_values(
+            ["geolocation_delta_time", "BEAM", "shot_number"]
+        ).reset_index(drop=True)
 
-            cluster_df = cluster_df.sort_values(by=["geolocation_delta_time", "BEAM", "shot_number"]).reset_index(drop=True)
+        # Cluster footprints by time_window
+        clusters = cluster_footprints(cluster_df, time_window=self.time_window)
+        clustered_rows = annotate_clusters(footprints, clusters)
+        score_cache = {int(s.shot_number): s.offset_scores for s in footprints}
 
-            # Find clusters for each footprint in the already filtered, simulated and scored footprint dataset
-            clusters_dict = cluster_footprints(cluster_df, time_window=time_window)
+        best_offsets = {}
+        # Average per offset inside each cluster
+        for main_sn, members in clusters.items():
+            accumulator = defaultdict(list)
+            for member in members:
+                for offset, score in score_cache.get(int(member), []):
+                    accumulator[offset].append(score)
 
-            del cluster_df
-
-            # Add information about clusters to final dataframe
-            results = annotate_clusters(results, clusters_dict)
-            cluster_args = [(main_sn, members) for main_sn, members in clusters_dict.items()]
-            del clusters_dict
-
-            # Find optimal score for each cluster
-            if self.use_parallel:
-                with multiprocessing.Pool(processes=self.n_processes, maxtasksperchild=5,
-                                          initializer=GEDICorrect.init_results_pool,
-                                          initargs=(results,)) as pool:
-                    cluster_results = list(tqdm(
-                        pool.imap_unordered(GEDICorrect.score_cluster_parallel, cluster_args),
-                        total=len(cluster_args),
-                        desc="Clustering Footprints"
-                    ))
-
-                GEDICorrect.clear_results_pool()
-            else:
-                # Use sequential
-                results_dict = {df.iloc[0]['shot_number']: df 
-                                for df in results if not df.empty}
-
-                cluster_results = self.score_clusters_sequential(cluster_args, results_dict)
-
-            gc.collect()
-
-            # Add information of final offset for each footprint
-            corrected_clusters = gpd.GeoDataFrame([fpt for fpt in cluster_results if fpt is not None], crs=self.crs, geometry='geometry')
-            corrected_clusters = add_cluster_stats(corrected_clusters)
-
-            print(f"[Simulate] Saving corrected granule {filename}")
-            self._save_outputs(results, filename, cluster_results=corrected_clusters)
-
-            del footprint_df, scorer, footprints, filtered_processed_footprints
-            del cluster_args, corrected_clusters, results, cluster_results
-
-            for p in multiprocessing.active_children():
-                p.terminate()
-                p.join()
-
-            gc.collect()
-
-    def _process_orbit_level(self, footprint, grid, temp_dir, original_df, filename, crs, scorer, score_dict, lock):
-        '''
-        Helper function for the partial used for both parallel and sequential modes for the
-        orbit-level correction at '_orbit_simulate()'. Grabs each footprint and performs simulation
-        and scoring, returning a DataFrame containing all of the simulated points. It then
-        updates a global variable (controlled by the lock if using parallelization) based on
-        the entire orbit's best offset.
-
-        Args:
-            footprint (DataFrame): Single footprint entry of a Dataframe, containing 
-                                   information and relevant variables
-            grid (list): A list of all possible offsets of the given grid
-            temp_dir (TemporaryDirectory): A temporary directory to keep information
-                                           and I/O operations during simulation
-            original_df (DataFrame): The original (reported GEDI) dataframe used in the
-                                     Scoring process
-            filename (str): Original GEDI granule filename
-            crs (pyproj.CRS): Coordinate Reference System of both ALS and GEDI, used for simulation
-            scorer (CorrectionScorer): CorrectionScorer instance used to score simulated points
-            score_dict (dict): A dictionary containing pairs of offset (tuple) and best calculated score for
-                               that offset. Used as a global variable to be updated by all processes (or 1 process)
-            lock (Manager.Lock): Lock instance to control access to the global variable 'score_dict'. Created by
-                                 Manager().
-
-        Returns:
-            scored_df (DataFrame): A dataframe of all of the simulated points around given 'footprint'. 
-                                   Each simulation also has its respective score.
-        '''
-         
-        # Simulate
-        simulated_df = process_all_footprints(footprint, temp_dir, self.las_dir, original_df, crs, grid=grid)
-
-        # Then Score
-        scored_df = scorer.score(simulated_df)
-
-        if len(scored_df) == 0:
-            return []
-
-        # Return scored simulation
-        temp_score_dict = scored_df.set_index('grid_offset')['final_score'].to_dict()
-
-        # Update the global score_dict in a thread-safe way
-        if not lock is None:
-            with lock:
-                for offset, score in temp_score_dict.items():
-                    score_dict[offset] = score_dict.get(offset, 0) + score
-        else:
-            # For sequential mode
-            for offset, score in temp_score_dict.items():
-                score_dict[offset] = score_dict.get(offset, 0) + score
-
-        return scored_df
-
-
-    def _process_beam_level(self, footprint, grid, temp_dir, original_df, crs, scorer, score_dict, lock):
-        '''
-        Helper function for the partial used for both parallel and sequential modes for the
-        beam-level correction at '_beam_simulate()'. Grabs each footprint and performs simulation
-        and scoring, returning a DataFrame containing all of the simulated points. It then
-        updates a global variable (controlled by the lock if using parallelization) based on
-        each BEAM's best offset.
-
-        Args:
-            footprint (DataFrame): Single footprint entry of a Dataframe, containing 
-                                   information and relevant variables
-            grid (list): A list of all possible offsets of the given grid
-            temp_dir (TemporaryDirectory): A temporary directory to keep information
-                                           and I/O operations during simulation
-            original_df (DataFrame): The original (reported GEDI) dataframe used in the
-                                     Scoring process
-            filename (str): Original GEDI granule filename
-            crs (pyproj.CRS): Coordinate Reference System of both ALS and GEDI, used for simulation
-            scorer (CorrectionScorer): CorrectionScorer instance used to score simulated points
-            score_dict (dict): A dictionary containing pairs of offset (tuple) and best calculated score for
-                               that offset. Used as a global variable to be updated by all processes (or 1 process)
-            lock (Manager.Lock): Lock instance to control access to the global variable 'score_dict'. Created by
-                                 Manager().
-
-        Returns:
-            scored_df (DataFrame): A dataframe of all of the simulated points around given 'footprint'. 
-                                   Each simulation also has its respective score.
-        '''
-
-        # Simulate
-        simulated_df = process_all_footprints(footprint, temp_dir, self.las_dir, original_df, crs, grid=grid)
-
-        # Then Score
-        scored_df = scorer.score(simulated_df)
-
-        # Catch errors / invalid scored footprints
-        if len(scored_df) == 0:
-            return []
-        
-        # Get BEAM name
-        beam_id = scored_df['BEAM'].values[0]
-
-        # Return scored simulation
-        temp_score_dict = scored_df.set_index('grid_offset')['final_score'].to_dict()
-
-        # Update global offset scores
-        if not lock is None:
-            with lock:
-                for offset, score in temp_score_dict.items():
-                    score_dict[beam_id][offset] = score_dict[beam_id].get(offset, 0) + score  # Accumulate the score
-        else:
-            # For sequential mode
-            for offset, score in temp_score_dict.items():
-                score_dict[beam_id][offset] = score_dict[beam_id].get(offset, 0) + score  # Introduce newly seen score
-
-        return scored_df
- 
-
-    def _orbit_simulate(self, grid_size, grid_step):
-        '''
-        Simulates and Scores at the orbit-level all of the input GEDI granules.
-        User can select parallelization. After processing every single input GEDI orbit
-        it outputs all simulated, original and corrected (highest scored) footprints in
-        files using the '_save_outputs()' function.
-
-        Args:
-            grid_size (int): Size of search grid around each reported footprint. Final size of grid is
-                             'Grid_Size x Grid_Size'
-            grid_step (int): Distance (in meters) between each point in grid. Defaults to 1 meter.
-
-        Returns:
-            None
-        '''
-        
-        lock = None if not self.use_parallel else Manager().Lock() # Used to lock global variable of best offset
-
-        # Iterate through each gedi file
-        for filename, footprint_df in self.gedi_granules.items():
-
-            score_dict = {} if not self.use_parallel else Manager().dict()
-            
-            print(f"[Simulate] Correcting granule {filename}")
-            print(f"[Simulate] Criteria: {self.criteria}")
-
-            scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria) # Init Scorer
-            offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step) # Generate grid
-
-            footprints = [row for i, row in footprint_df.iterrows()]
-            processed_footprints = []
-
-            if self.use_parallel:
-                # Parallelization
-                print(f"[Simulate] Running in parallel mode with {self.n_processes} processes...")
-                with multiprocessing.Pool(self.n_processes, maxtasksperchild=5, initializer=init_random_seed) as pool:
-
-                    partial_func_processing = partial(self._process_orbit_level,
-                                                    grid=offsets,
-                                                    temp_dir=self.temp_dir.name,
-                                                    original_df=footprint_df,
-                                                    filename=filename,
-                                                    crs=str(self.crs).split(":")[-1],
-                                                    scorer=scorer,
-                                                    score_dict=score_dict,
-                                                    lock=lock)
-
-                    with tqdm(total=len(footprints), desc="Processing Points") as pbar:
-                        for correct_fpt in pool.imap_unordered(partial_func_processing, footprints):
-                            processed_footprints.append(correct_fpt)
-                            pbar.update(1)
-            else:
-                print("[Simulate] Running in sequential mode...")
-                with tqdm(total=len(footprints), desc="Processing Footprints") as pbar:
-                    for footprint in footprints:
-                        processed = self._process_orbit_level(
-                            footprint, offsets, self.temp_dir.name, footprint_df,
-                            filename, str(self.crs).split(":")[-1], scorer, score_dict, lock
-                        )
-                        processed_footprints.append(processed)
-                        pbar.update(1)
-
-            processed_footprints = [x for x in processed_footprints if not type(x) is list]
-
-            # After all footprints are processed, calculate the mean score
-            num_footprints = len(processed_footprints)
-
-            if num_footprints == 0:
-                print(f"{filename} contains invalid footprints for processing. Skipping...")
+            if not accumulator:
                 continue
 
-            mean_score_dict = {offset: score / num_footprints for offset, score in score_dict.items()}
+            best_offset = max(
+                accumulator.items(),
+                key=lambda item: sum(item[1]) / len(item[1])
+            )[0]
 
-            # Select the best offset based on the highest mean score
-            best_offset = max(mean_score_dict, key=mean_score_dict.get)
+            best_offsets[int(main_sn)] = best_offset
 
-            print(f"Best offset: {best_offset} with mean score: {mean_score_dict[best_offset]}")
+        # Footprints not assigned to a cluster (singletons) can fall back to their own best score
+        for footprint in footprints:
+            shot_id = int(footprint.shot_number)
+            if shot_id not in best_offsets and footprint.offset_scores:
+                best_offsets[shot_id] = max(footprint.offset_scores, key=lambda entry: entry[1])[0]
 
-            # Save files after correcting
-            print(f"[Simulate] Saving corrected granule {filename}")
-            self._save_outputs(processed_footprints, filename, offset=best_offset)
+        return best_offsets
+    
 
-            del score_dict
-
-    def _beam_simulate(self, grid_size, grid_step):
+    def _sim_and_score(self, footprint_df, scorer, offsets):
         '''
-        Simulates and Scores at the Beam-level all of the input GEDI granules.
-        User can select parallelization. After processing every single input GEDI orbit
-        it outputs all simulated, original and corrected (highest scored) footprints in
-        files using the '_save_outputs()' function.
+        Simulates and scores all footprints inside a file.
+        Saves corrected footprints in the simplest form, with only a shot_number, beam,
+        geolocation_delta_time and every final_score for each offset, calculated in the Scoring Step
+        '''
+        scored_footprints = []
 
-        Args:
-            grid_size (int): Number of points to simulate around each reported footprint
-            grid_step (float): Maximum radius (distance in meters) from reported footprint to simulate points.
+        partial_func_processing = partial(
+            self.__sim_scorer_footprint,
+            scorer=scorer,
+            offsets=offsets,
+            original_df=footprint_df,
+        )
 
-        Returns:
-            None
+        fpt_rows = [row for _, row in footprint_df.iterrows()]
+
+        if self.use_parallel:
+            with multiprocessing.Pool(self.n_processes, maxtasksperchild=5, initializer=init_random_seed) as pool:
+                for corrected_footprint in tqdm(pool.imap_unordered(partial_func_processing, fpt_rows),
+                                                total=len(fpt_rows),
+                                                desc=f"Processing footprints"):
+                    if corrected_footprint:
+                        scored_footprints.append(corrected_footprint)
+
+        else:
+            for fpt in tqdm(fpt_rows, desc=f"Processing footprints"):
+                corrected_footprint = partial_func_processing(fpt)
+                if corrected_footprint:
+                        scored_footprints.append(corrected_footprint)
+
+        return scored_footprints
+    
+    
+    def __sim_scorer_footprint(self, footprint_row, scorer, offsets, original_df):
+        '''
+        Helper/Partial Function used in processing of '_sim_and_score'
         '''
 
-        # Initialize multiprocessing resources if running in parallel
-        manager = Manager() if self.use_parallel else None
-        lock = manager.Lock() if self.use_parallel else None
+        sim = process_all_footprints(
+            footprint_row,
+            temp_dir=self.temp_dir.name,
+            las_dir=self.las_dir,
+            original_df=original_df,
+            crs=str(self.crs).split(":")[-1],
+            grid=offsets,
+        )
 
-        for filename, footprint_df in self.gedi_granules.items():
-            print(f"[Simulate] Correcting granule {filename}")
-            print(f"[Simulate] Criteria: {self.criteria}")
+        if not isinstance(sim, pd.DataFrame) or len(sim) < 1:
+            return None
 
-            scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria)
-            offsets = generate_grid(x_max=grid_size, y_max=grid_size, step=grid_step)
+        scored = scorer.score(sim)
+        if len(scored) < 1:
+            return None
 
-            footprints = [row for i, row in footprint_df.iterrows()]
-            processed_footprints = []
+        shot = int(scored["shot_number"].iloc[0])
+        beam = str(scored["BEAM"].iloc[0])
+        delta = float(scored["geolocation_delta_time"].iloc[0])
+        offset_scores = list(zip(scored["grid_offset"].tolist(), scored["final_score"].tolist()))
 
-            # Define all valid GEDI BEAM IDs
-            beam_ids = ["BEAM0000", "BEAM0001", "BEAM0010", "BEAM0011", 
-                        "BEAM0101", "BEAM0110", "BEAM1000", "BEAM1011"]
-            
-             # Initialize score dictionary
-            score_dict = manager.dict() if self.use_parallel else {}
-            for beam_id in beam_ids:
-                score_dict[beam_id] = manager.dict() if self.use_parallel else {}
+        return ScoredFootprint(shot_number=shot, beam=beam, delta_time=delta, offset_scores=offset_scores)
+    
+
+    def _resimulate_best_offsets(self, best_offsets, original_df, scorer):
+        '''
+        Resimulator used before '_save_outputs'. Simulates GEDI footprints at their best scored location offsets.
+        '''
+
+        footprints_to_resimulate = [
+            (shot_number, offset)
+            for shot_number, offset in best_offsets.items()
+        ]
+
+        ### Get intersecting las for each shot_number
+
+        single_resimulator = partial(
+            self.__resimulate_single,
+            original_df=original_df,
+            scorer=scorer,
+            temp_dir=self.temp_dir.name,
+        )
+
+        corrected_rows = []
+
+        if self.use_parallel:
+            with multiprocessing.Pool(self.n_processes, maxtasksperchild=5, initializer=init_random_seed) as pool:
+                for result in tqdm(pool.imap_unordered(single_resimulator, footprints_to_resimulate),
+                                   total=len(footprints_to_resimulate),
+                                   desc="Re-simulating for output"):
+                    if result is not None:
+                        corrected_rows.append(result)
+        else:
+            for footprint in tqdm(footprints_to_resimulate, desc="Re-simulating for output"):
+                result = single_resimulator(footprint)
+                if result is not None:
+                    corrected_rows.append(result)
+
+        return corrected_rows
+    
+
+    def __resimulate_single(self, footprint, original_df, scorer, temp_dir):
+        '''
+        Helper/Partial Function for '_resimulate_best_offsets'
+        Simulates and Scores a given footprint of unique shot_number and offset
+        '''
+
+        shot_number, offset = footprint
+        base_row = original_df.loc[original_df['shot_number_x'] == shot_number]
+
+        if base_row.empty:
+            print(f"[Resimulate] Target footprint {shot_number} does not exist in the original file.")
+            return None
+
+        footprint = base_row.iloc[0]
+
+        single_simulation = process_all_footprints(
+            footprint,
+            temp_dir=temp_dir,
+            las_dir=self.las_dir,
+            original_df=original_df,
+            crs=str(self.crs).split(":")[-1],
+            grid=[offset],
+            simulate_original=False,
+        )
+
+        if not isinstance(single_simulation, pd.DataFrame) or len(single_simulation) < 1:
+            return None
+
+        scored_single = scorer.score(single_simulation)
+        if len(scored_single) < 1:
+            return None
         
-            # Prepare function for execution
-            partial_func_processing = partial(self._process_beam_level,
-                                                  grid=offsets,
-                                                  temp_dir=self.temp_dir.name,
-                                                  original_df=footprint_df,
-                                                  crs=str(self.crs).split(":")[-1],
-                                                  scorer=scorer,
-                                                  score_dict=score_dict,
-                                                  lock=lock)
+        # Footprint will have a 'final_score' of 1.0, since it's the only one footprint to average.
+        # Drop the final score column
+        # TODO: Display real final_score for that footprint.
+        scored_single = scored_single.drop(columns=["final_score"], errors="ignore")
 
-            # Run in parallel or sequentially
-            if self.use_parallel:
-                with multiprocessing.Pool(self.n_processes, maxtasksperchild=5, initializer=init_random_seed) as pool:
-                    with tqdm(total=len(footprints), desc="Processing Points") as pbar:
-                        for correct_fpt in pool.imap_unordered(partial_func_processing, footprints):
-                            processed_footprints.append(correct_fpt)
-                            pbar.update(1)
-            else:
-                for footprint in tqdm(footprints, desc="Processing Points"):
-                    processed_footprints.append(partial_func_processing(footprint))
-
-            processed_footprints = [x for x in processed_footprints if not type(x) is list]
-
-            best_beam_offset = {}
-            beam_counts = {}
-
-            # Get each BEAM count
-            for fpt in processed_footprints:
-                beam_id = fpt['BEAM'].iloc[0]
-                if beam_id in beam_counts:
-                    beam_counts[beam_id] += 1
-                else:
-                    beam_counts[beam_id] = 1
-
-            for beam_id, offsets in score_dict.items():
-                # After all footprints are processed, calculate the mean score
-                if beam_id in beam_counts:
-                    num_footprints = beam_counts[beam_id]
-                else:
-                    num_footprints = 0
-
-                if num_footprints == 0:
-                    continue
-
-                mean_score_dict = {offset: score / num_footprints for offset, score in offsets.items()}
-
-                # Select the best offset based on the highest mean score
-                best_offset = max(mean_score_dict, key=mean_score_dict.get)
-
-                print(f"Best offset for {beam_id}: {best_offset} with mean score: {mean_score_dict[best_offset]}")
-                best_beam_offset[beam_id] = best_offset
-
-            print(f"[Simulate] Saving corrected granule {filename}")
-            self._save_outputs(processed_footprints, filename, beam_offset=best_beam_offset)
-
-            del score_dict
+        return scored_single
