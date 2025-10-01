@@ -391,7 +391,7 @@ class GEDICorrect:
         scored_footprints = []
 
         partial_func_processing = partial(
-            self.__sim_scorer_footprint,
+            self._sim_scorer_footprint,
             scorer=scorer,
             offsets=offsets,
             original_df=footprint_df,
@@ -416,7 +416,7 @@ class GEDICorrect:
         return scored_footprints
     
     
-    def __sim_scorer_footprint(self, footprint_row, scorer, offsets, original_df):
+    def _sim_scorer_footprint(self, footprint_row, scorer, offsets, original_df):
         '''
         Helper/Partial Function used in processing of '_sim_and_score'
         '''
@@ -458,7 +458,7 @@ class GEDICorrect:
         ### Get intersecting las for each shot_number
 
         single_resimulator = partial(
-            self.__resimulate_single,
+            self._resimulate_single,
             original_df=original_df,
             scorer=scorer,
             temp_dir=self.temp_dir.name,
@@ -482,7 +482,7 @@ class GEDICorrect:
         return corrected_rows
     
 
-    def __resimulate_single(self, footprint, original_df, scorer, temp_dir):
+    def _resimulate_single(self, footprint, original_df, scorer, temp_dir):
         '''
         Helper/Partial Function for '_resimulate_best_offsets'
         Simulates and Scores a given footprint of unique shot_number and offset
