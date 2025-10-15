@@ -62,18 +62,23 @@ Switch the file directories provided in the examples with your desired directori
 ```
 python3 gedi_correct.py --las_dir "/home/leonel/abrantes_studyarea" --granules_dir "/home/leonel/gedi_merged_abrantes" --out_dir "/home/leonel/abrantes_correct"
 ```
-Executes GEDICorrect with default footprint correction settings: at the footprint-level using the "KL" metric.
+Executes GEDICorrect with default footprint correction settings: at the orbit-level using Pearson's Correlation metric.
 ______________
 ```
-python3 gedi_correct.py --las_dir "/home/leonel/abrantes_studyarea" --granules_dir "/home/leonel/gedi_merged_abrantes" --out_dir "/home/leonel/abrantes_correct" --mode "orbit" --criteria "wave_pearson kl"
+python3 gedi_correct.py --las_dir "/home/leonel/abrantes_studyarea" --granules_dir "/home/leonel/gedi_merged_abrantes" --out_dir "/home/leonel/abrantes_correct" --mode "beam" --criteria "wave_pearson kl"
 ```
-Executes GEDICorrect on a study area at the Orbit-level, using the Pearson Correlation and KL metrics on the waveforms to calculate the similarities.
+Executes GEDICorrect on a study area at the Beam-level, using the Pearson Correlation and KL metrics on the waveforms to calculate the similarities.
 ______________
 ```
-python3 gedi_correct.py --las_dir "/home/leonel/abrantes_studyarea" --granules_dir "/home/leonel/gedi_merged_abrantes" --out_dir "/home/leonel/abrantes_correct" --mode "beam" --criteria "rh_distance" --parallel --n_processes 8
+python3 gedi_correct.py --las_dir "/home/leonel/abrantes_studyarea" --granules_dir "/home/leonel/gedi_merged_abrantes" --out_dir "/home/leonel/abrantes_correct" --mode "footprint" --time_window 0.04 --criteria "rh_distance" --parallel --n_processes 8
 ```
-Executes GEDICorrect at the Beam-level, using the CRSSDA on the RH profile similarity metric. This command also lets GEDICorrect run in parallel, using 8 processes to process GEDI data.
+Executes GEDICorrect at the Footprint-level, using the CRSSDA on the RH profile similarity metric with a time window of 0.04. This command also lets GEDICorrect run in parallel, using 8 processes to process GEDI data.
 ______________
+
+For more information on commands and options, please use
+```
+python3 gedi_correct.py --help
+```
 
 ## Contributing to this repository
 
@@ -92,8 +97,9 @@ Check out our other repository ![GEDI-Pipeline](https://github.com/leonelluiscor
 
 ## Citing this project
 
-Corado, L., Godinho, S. (2025) GEDICorrect: A Python Framework for GEDI Geolocation Correction at the Orbit, Beam or Footprint-Level Using Multiple Criteria and Parallel Processing Methods. version 1.0.0, available at: https://github.com/leonelluiscorado/GEDICorrect
+Corado, L., Godinho, S. (2025) GEDICorrect: A Python Framework for GEDI Geolocation Correction at the Orbit, Beam or Footprint-Level Using Multiple Criteria and Parallel Processing Methods. version 0.3.0, available at: https://github.com/leonelluiscorado/GEDICorrect
 
 ### Funding
 
 This work was conducted within the framework of the GEDI4SMOS project (Combining LiDAR, radar, and multispectral data to characterize the three-dimensional structure of vegetation and produce land cover maps), financially supported by the Directorate-General for Territory (DGT) with funds from the Recovery and Resilience Plan (Investimento RE-C08-i02: Cadastro da Propriedade Rústica e Sistema de Monitorização da Ocupação do Solo).
+
