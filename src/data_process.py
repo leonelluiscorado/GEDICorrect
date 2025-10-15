@@ -126,7 +126,7 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
         return las_extents, crs
 
     print("Processing LAS bounds...")
-    with tqdm(total=len(las_files)) as pbar:
+    with tqdm(total=len(las_files), desc="Building ALS bounds...") as pbar:
         for file in las_files:
             las_file = os.path.join(las_files_dir, file)
             with laspy.open(las_file) as las:
@@ -324,7 +324,7 @@ def parse_txt(origin_footprint, filename):
 
     return df[cols]
 
-def cluster_footprints(df, method='single', time_window=0.215):
+def cluster_footprints(df, method='single', time_window=0.04):
     """
     Builds individual clusters around each footprint based on 'delta_time' window and optional beam match based on 'method'.
     Each cluster is keyed by a footprint shot_number and contains a list of nearby shot_numbers.

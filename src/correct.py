@@ -59,6 +59,7 @@ class GEDICorrect:
                  save_origin_location=False,
                  als_crs=None,
                  als_algorithm='convex',
+                 time_window=0.04,
                  use_parallel=False,
                  n_processes=None):
         
@@ -74,6 +75,7 @@ class GEDICorrect:
         self.random = random
         self.als_crs = str(als_crs).split(":")[-1] if als_crs else None
         self.als_algorithm = als_algorithm
+        self.time_window = time_window
 
         self.gedi_granules = {}
 
@@ -142,7 +144,7 @@ class GEDICorrect:
             if not len(best_offsets):
                 print(f"[GEDICorrect] Error in correcting file {filename}. Try again.")
                 continue
-
+            
             ## Output step
             # Resimulate best offset points for output
             corrected_rows = self._resimulate_best_offsets(best_offsets, footprint_df, scorer)
@@ -351,13 +353,34 @@ class GEDICorrect:
         ).reset_index(drop=True)
 
         # Cluster footprints by time_window
+        print(f"[GEDICorrect] Clustering footprints with time window {self.time_window}")
         clusters = cluster_footprints(cluster_df, time_window=self.time_window)
-        clustered_rows = annotate_clusters(footprints, clusters)
+
+        ## Introduce additional information about clusters to each footprint
+        summary_by_id = {int(s.shot_number): s for s in footprints}
+
+        # Record cluster size on every member
+        for members in clusters.values():
+            size = len(members)
+            for member in members:
+                summary = summary_by_id.get(int(member))
+                if summary is not None:
+                    summary.cluster_n = size
+
+        # Ensure singletons have cluster_n = 1
+        for summary in footprints:
+            if getattr(summary, "cluster_n", None) is None:
+                summary.cluster_n = 1
+
+        #clustered_rows = annotate_clusters(footprints, clusters)
         score_cache = {int(s.shot_number): s.offset_scores for s in footprints}
 
         best_offsets = {}
         # Average per offset inside each cluster
-        for main_sn, members in clusters.items():
+        for main_sn, members in tqdm(clusters.items(),
+                                     total=len(clusters),
+                                     desc=f"Clustering Footprints"):
+            
             accumulator = defaultdict(list)
             for member in members:
                 for offset, score in score_cache.get(int(member), []):
@@ -442,7 +465,7 @@ class GEDICorrect:
         delta = float(scored["geolocation_delta_time"].iloc[0])
         offset_scores = list(zip(scored["grid_offset"].tolist(), scored["final_score"].tolist()))
 
-        return ScoredFootprint(shot_number=shot, beam=beam, delta_time=delta, offset_scores=offset_scores)
+        return ScoredFootprint(shot_number=shot, beam=beam, delta_time=delta, offset_scores=offset_scores, cluster_n=1)
     
 
     def _resimulate_best_offsets(self, best_offsets, original_df, scorer):
@@ -456,12 +479,25 @@ class GEDICorrect:
         ]
 
         ### Get intersecting las for each shot_number
+        las_cache = {}
+        for shot_number, _ in footprints_to_resimulate:
+            row = original_df.loc[original_df["shot_number_x"] == shot_number]
+            
+            # If the column already exists from setup, reuse it
+            if "intersecting_las" in row.columns and isinstance(row.iloc[0]["intersecting_las"], list):
+                las_cache[shot_number] = row.iloc[0]["intersecting_las"]
+            else:
+                # Otherwise compute it on the fly
+                buf = row.iloc[0]["buffer"]
+                las_cache[shot_number] = find_intersecting_las_files(buf, self.las_extents)
+
 
         single_resimulator = partial(
             self._resimulate_single,
             original_df=original_df,
             scorer=scorer,
             temp_dir=self.temp_dir.name,
+            las_cache=las_cache
         )
 
         corrected_rows = []
@@ -482,7 +518,7 @@ class GEDICorrect:
         return corrected_rows
     
 
-    def _resimulate_single(self, footprint, original_df, scorer, temp_dir):
+    def _resimulate_single(self, footprint, original_df, scorer, temp_dir, las_cache):
         '''
         Helper/Partial Function for '_resimulate_best_offsets'
         Simulates and Scores a given footprint of unique shot_number and offset
@@ -495,7 +531,10 @@ class GEDICorrect:
             print(f"[Resimulate] Target footprint {shot_number} does not exist in the original file.")
             return None
 
-        footprint = base_row.iloc[0]
+        footprint = base_row.iloc[0].copy()
+
+        # Find intersecting las, if not return []
+        footprint["intersecting_las"] = las_cache.get(shot_number, [])
 
         single_simulation = process_all_footprints(
             footprint,
@@ -504,7 +543,7 @@ class GEDICorrect:
             original_df=original_df,
             crs=str(self.crs).split(":")[-1],
             grid=[offset],
-            simulate_original=False,
+            simulate_original=False
         )
 
         if not isinstance(single_simulation, pd.DataFrame) or len(single_simulation) < 1:

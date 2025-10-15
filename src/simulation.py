@@ -123,15 +123,13 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
     ## Generate txt list of coordinates from a grid
     if grid:
         with open(os.path.join(temp_dir, f"points_test_{idx}.txt"), "w") as f:
-            if simulate_original:
-                f.write(f"{footprint['geometry'].x} {footprint['geometry'].y}\n") # Write original footprint position as first point
-                num_points += 1  # Additional point
             for offset in grid:
                 offset_x = footprint['geometry'].x + offset[0]
                 offset_y = footprint['geometry'].y + offset[1]
                 f.write(f"{offset_x} {offset_y}\n")
     ## Generate txt list of coordinates from random points
     elif num_points:
+        # DEPRECATED
         ## Generate random points around footprint
         rand_points = generate_random_points(footprint['geometry'].x, footprint['geometry'].y, num_points=num_points, max_radius=max_radius, min_dist=min_dist)
 
