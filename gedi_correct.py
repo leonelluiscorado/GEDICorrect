@@ -9,6 +9,8 @@ from src.correct import GEDICorrect
 from src.waveform_processing import create_beautiful_scatterplot
 from src.metric import *
 
+import time
+
 # --------------------------COMMAND LINE ARGUMENTS AND ERROR HANDLING---------------------------- #
 # Set up argument and error handling
 parser = argparse.ArgumentParser(description='A script to correct GEDI Geolocation at the footprint level.')
@@ -43,7 +45,7 @@ parser.add_argument('--als_crs', required=False, help='(Optional) Set the EPSG c
 
 parser.add_argument('--als_algorithm', required=False, help='(Optional) Set the ALS bounding algorithm. Default is convex, which builds tight-fitting boundary. \'simple\' creates a simple bounding box around the ALS.', type=str, default='convex')
 
-parser.add_argument('--min_dist', required=False, help='Minimum distance between simulated points around each original footprint', type=float, default=1.0)
+parser.add_argument('--time_window', required=False, help='Minimum distance between simulated points around each original footprint', type=float, default=0.04)
 
 parser.add_argument('--parallel', required=False, help='Use parallel processing with "--n_processes" processes. If no n_processes are defined, defaults to 4 processes.',
                     action='store_true')
@@ -55,6 +57,8 @@ args = parser.parse_args()
 # ----------------------------------------------------------------------------------------------- #
 
 # List Files and Create Output directory if needed
+
+start = time.time()
 
 if not os.path.exists(args.out_dir):
     os.mkdir(args.out_dir)
@@ -90,6 +94,10 @@ else:
     results = correct.simulate(grid_size=args.grid_size, grid_step=args.grid_step)
 
 print(f"[Correction] Correction of input footprints complete! All files have been saved to {args.out_dir}")
+
+end = time.time()
+
+print(f"Time elapsed for this experiment: {end - start} seconds")
 
 # ----------- Calculate results (RH95 reported vs RH95 simulated) ---------------- #
 '''
