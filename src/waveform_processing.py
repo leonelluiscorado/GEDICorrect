@@ -3,6 +3,7 @@ Helper functions with waveform data processing and normalization functions
 Also includes Plotting function
 """
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -131,7 +132,7 @@ def align_simulated_gedi(original_rxwaveform, sim_rxwaveform, sim_bounds, origin
     return original_rxwaveform[gedi_arr_end:gedi_arr_start+indices_to_add], sim_rxwaveform[sim_bounds[0]:sim_bounds[1]]
 
 
-def plot_waveform_comparison(sim_wave, gedi_wave, sim_z, gedi_z, out_filename):
+def plot_waveform_comparison(sim_wave, gedi_wave, sim_z, gedi_z, out_filename, out_dir=None):
     """
     Plots the Original and Simulated Waveforms for debugging purposes.
     Outputs at 600 dpi to 'out_filename'.
@@ -148,7 +149,7 @@ def plot_waveform_comparison(sim_wave, gedi_wave, sim_z, gedi_z, out_filename):
 
     """
 
-    xmax = max(max(gedi_wave), max(sim_wave)) + 10
+    xmax = 350
 
     try:
         plt.ioff()
@@ -156,11 +157,14 @@ def plot_waveform_comparison(sim_wave, gedi_wave, sim_z, gedi_z, out_filename):
         plt.plot(gedi_wave, gedi_z, color='#e71c7d', label="GEDI")
 
         plt.legend(loc='lower right')
-        plt.xlim(left=-5)
+        plt.xlim(left=-5, right=xmax)
         plt.xlabel('DN')
         plt.ylabel('Height (m)')
 
-        name_file = f"{out_filename}.png"
+        if os.path.exists(out_dir):
+            name_file = os.path.join(out_dir, f"{out_filename}.png")
+        else:
+            name_file = f"./{out_filename}.png"
 
         plt.savefig(name_file)
         plt.close()
@@ -173,6 +177,7 @@ def plot_waveform_comparison(sim_wave, gedi_wave, sim_z, gedi_z, out_filename):
         return False
 
     return True
+
 
 def create_beautiful_scatterplot(df, title, out_file=None):
 

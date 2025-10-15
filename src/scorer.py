@@ -110,7 +110,7 @@ class CorrectionScorer:
         np.random.seed(0)
 
         # Do not score invalid simulated footprints
-        if len(sim_footprints) <= 1:
+        if len(sim_footprints) < 1:
             return []
 
         # No criteria selected
@@ -149,33 +149,6 @@ class CorrectionScorer:
 
         return sim_footprints
 
-
-    def _rh_correlation(self, original, simulated):
-        """
-        ///// PROPOSAL METRIC - NOT TESTED /////
-        Calculates the Relative Height Metrics Correlation between the simulated and original footprints.
-        Matching is calculated with:
-        - All RH columns Correlation at heights ['25', '50', '60', '70', '75', '80', '85', '90', '95', '98', '100']
-          using Pearsonr
-        """
-        ## RH Correlation
-        original_rh_cols = [col for col in original.columns if 'rh_' in col]
-        clean_original_rh_cols = clean_cols_rh(original_rh_cols, original=False)
-        original_rh = [original[x].values[0] for x in original.columns if x in clean_original_rh_cols]
-
-        simulated_rh_columns = [x for x in simulated.columns if 'rhGauss_' in x]
-
-        correls = []
-        # Calculate correlation of RHs between original and simulated
-        for i, sim in simulated.iterrows():
-            simulated_rh = [sim[x] for x in simulated_rh_columns]
-
-            r = pearsonr(original_rh, simulated_rh)
-            correls.append(r.statistic)
-
-        simulated['rh_correlation'] = correls
-        
-        return simulated
 
     def _rh_distance(self, original, simulated):
         """
@@ -314,15 +287,15 @@ class CorrectionScorer:
             if self.debug:
 
                 footprint_shot_number = original['shot_number_x'].values[0]
-                #offset = str(sim_point['grid_offset'])
+                offset = str(sim_point['grid_offset'])
+
+                common_z = np.sort(np.unique(np.concatenate((sim_z, gedi_z))))
                 
-                if footprint_shot_number in []:
-                    common_z = np.sort(np.unique(np.concatenate((sim_z, gedi_z))))
-                    plot_waveform_comparison(sim_wave_interp,
-                                            ori_wave_interp,
-                                            common_z,
-                                            common_z,
-                                            f"{original['shot_number_x'].values[0]}-ID_{sim_point['wave_ID']}")
+                plot_waveform_comparison(sim_wave_interp,
+                                        ori_wave_interp,
+                                        common_z,
+                                        common_z,
+                                        f"{original['shot_number_x'].values[0]}-ID_{sim_point['wave_ID']}")#-OFFSET_{offset}")
 
         if correlations:
             simulated['waveform_matching'] = correlations
