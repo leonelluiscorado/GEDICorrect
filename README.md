@@ -9,14 +9,14 @@
 
 An open-source Python framework for precise GEDI geolocation correction using small-footprint ALS data, designed with simplicity and accessibility in mind. GEDICorrect integrates multiple methods, criteria, and metrics, including waveform matching, terrain matching, and relative height (RH) profile matching, to achieve refined geolocation accuracy at the orbit, beam, or footprint levels. By leveraging advanced similarity metrics - such as Pearson and Spearman waveform correlations, Curve Root Sum Squared Differential Area (CRSSDA), and Kullback-Leibler divergence - GEDICorrect ensures precise alignment between GEDI measurements and simulated data.
 
-Additionally, GEDICorrect incorporates parallel processing strategies using Python’s multiprocessing capabilities, enabling efficient handling of large-scale GEDI and ALS datasets. This scalability makes the framework practical for global-scale applications while maintaining accuracy and computational efficiency. This framework works as an extension to ![GEDI Simulator](https://bitbucket.org/StevenHancock/gedisimulator/src/master/), developed by Steven Hancock and the GEDI Science Team, which we are thankful for their valuable contributions. More specifically, GEDICorrect uses the _gediRat_ and _gediMetrics_ programs from GEDI Simulator to simulate GEDI footprints using the ALS data, and extract metrics from those footprints.
+Additionally, GEDICorrect incorporates parallel processing strategies using Python’s multiprocessing capabilities, enabling efficient handling of large-scale GEDI and ALS datasets. This scalability makes the framework practical for global-scale applications while maintaining accuracy and computational efficiency. This framework works as an extension to [GEDI Simulator](https://bitbucket.org/StevenHancock/gedisimulator/src/master/), developed by Steven Hancock and the GEDI Science Team, which we are thankful for their valuable contributions. More specifically, GEDICorrect uses the _gediRat_ and _gediMetrics_ programs from GEDI Simulator to simulate GEDI footprints using the ALS data, and extract metrics from those footprints.
 
 By addressing critical barriers in geolocation correction with an open-source, user-friendly design, this framework enables a better assessment of canopy structure that can be applied to a wide range of fields, from advancing our understanding of carbon sequestration to supporting more informed planning and conservation efforts.
 
 ## Installation
 
 **Requirements**:
-- GCC: 11.4 or later (to install ![GEDI Simulator](https://bitbucket.org/StevenHancock/gedisimulator/src/master/))
+- GCC: 11.4 or later (to install [GEDI Simulator](https://bitbucket.org/StevenHancock/gedisimulator/src/master/))
 - Python: 3.11 or later
 - Anaconda: 23.11.0 or 24.4.0 or later
 - OS: Linux or Windows WSL (Ubuntu)
@@ -28,7 +28,7 @@ Always keep a copy of the most recent update of GEDICorrect, to ensure it functi
 _________________________________
 
 For Windows Users:
-- GEDICorrect Support for Windows (natively) is currently unsupported, however, it provides Windows Subsystem for Linux (WSL) in the most recent versions of Windows (10 or 11). Before installing GEDICorrect, it is recommended that you install the ![Ubuntu WSL](https://learn.microsoft.com/en-us/windows/wsl/install). After following the instructions, start your Ubuntu subsystem and follow the subsequent steps inside the virtual machine.
+- GEDICorrect Support for Windows (natively) is currently unsupported, however, it provides Windows Subsystem for Linux (WSL) in the most recent versions of Windows (10 or 11). Before installing GEDICorrect, it is recommended that you install the [Ubuntu WSL](https://learn.microsoft.com/en-us/windows/wsl/install). After following the instructions, start your Ubuntu subsystem and follow the subsequent steps inside the virtual machine.
 
 _________________________________
 
@@ -36,7 +36,7 @@ To install GEDICorrect:
 
 1. Clone the repository. Navigate to the cloned repository's directory.
 2. Execute the Bash script `install_hancock_tools.bash` located in the root directory of the repository. This script will install GEDI Simulator and all the necessary dependencies to perform GEDI waveform simulations. To execute it, first give it executable permissions with `chmod +x install_hancock_tools.bash` and then execute it with `./install_hancock_tools`.
-3. After installing GEDI Simulator, setup the Anaconda virtual environment (must have ![Anaconda](https://www.anaconda.com/docs/getting-started/anaconda/install) installed first) for this repository by installing its required dependencies using the provided `environment.yml` with `conda env create -f environment.yml`.
+3. After installing GEDI Simulator, setup the Anaconda virtual environment (must have [Anaconda](https://www.anaconda.com/docs/getting-started/anaconda/install) installed first) for this repository by installing its required dependencies using the provided `environment.yml` with `conda env create -f environment.yml`.
 4. Activate the virtual environment with `conda activate GEDICorrect`. You're set up!
 
 ## Getting Started
@@ -82,7 +82,7 @@ python3 gedi_correct.py --help
 
 ## Example Dataset
 
-An example dataset is available on ![Zenodo](https://zenodo.org/records/17494713). It contains a merged L1B/L2A GEDI orbit for a small area in Portugal, and the accompanying ALS point cloud dataset. We encourage you to follow the dataset instructions before test running GEDICorrect. Before running this test, the user must convert the ".laz" files to ".las" using the `utils/convert_las.py` script located in the repository. Follow the instructions of the script for further information. Make sure you have atleast 200GB of space available for the ".las" dataset.
+An example dataset is available on [Zenodo](https://doi.org/10.5281/zenodo.17494712). It contains a merged L1B/L2A GEDI orbit for a small area in Portugal, and the accompanying ALS point cloud dataset. We encourage you to follow the dataset instructions before test running GEDICorrect. Before running this test, the user must convert the ".laz" files to ".las" using the `utils/convert_las.py` script located in the repository. Follow the instructions of the script for further information. Make sure you have atleast 200GB of space available for the ".las" dataset.
 
 ## Contributing to this repository
 
@@ -97,7 +97,7 @@ Hancock, S., Armston, J., Hofton, M., Sun, X., Tang, H., Duncanson, L.I., Kellne
 - GEDI L1B Geolocated Waveform Data Global Footprint Level - [GEDI01_B](https://lpdaac.usgs.gov/products/gedi01_bv001/)
 - GEDI L2A Elevation and Height Metrics Data Global Footprint Level - [GEDI02_A](https://lpdaac.usgs.gov/products/gedi02_av002/)
 
-Check out our other repository ![GEDI-Pipeline](https://github.com/leonelluiscorado/GEDI-Pipeline), an unified workflow to download GEDI data!
+Check out our other repository [GEDI-Pipeline](https://github.com/leonelluiscorado/GEDI-Pipeline), an unified workflow to download GEDI data!
 
 ## Citing this project
 
@@ -106,6 +106,7 @@ Corado, L., Godinho, S. (2025) GEDICorrect: A Python Framework for GEDI Geolocat
 ### Funding
 
 This work was conducted within the framework of the GEDI4SMOS project (Combining LiDAR, radar, and multispectral data to characterize the three-dimensional structure of vegetation and produce land cover maps), financially supported by the Directorate-General for Territory (DGT) with funds from the Recovery and Resilience Plan (Investimento RE-C08-i02: Cadastro da Propriedade Rústica e Sistema de Monitorização da Ocupação do Solo).
+
 
 
 
