@@ -80,6 +80,10 @@ For more information on commands and options, please use
 python3 gedi_correct.py --help
 ```
 
+## Example Dataset
+
+An example dataset is available on ![Zenodo](https://zenodo.org/records/17494713). It contains a merged L1B/L2A GEDI orbit for a small area in Portugal, and the accompanying ALS point cloud dataset. We encourage you to follow the dataset instructions before test running GEDICorrect. Before running this test, the user must convert the ".laz" files to ".las" using the `utils/convert_las.py` script located in the repository. Follow the instructions of the script for further information. Make sure you have atleast 200GB of space available for the ".las" dataset.
+
 ## Contributing to this repository
 
 This project is in its early stages so any contributions are welcome with a well documented/explained issue and implementation! If you encounter any problems with GEDICorrect or at the Installation/Execution steps, please open an issue on this repository with the steps described to replicate the problem.
@@ -102,4 +106,5 @@ Corado, L., Godinho, S. (2025) GEDICorrect: A Python Framework for GEDI Geolocat
 ### Funding
 
 This work was conducted within the framework of the GEDI4SMOS project (Combining LiDAR, radar, and multispectral data to characterize the three-dimensional structure of vegetation and produce land cover maps), financially supported by the Directorate-General for Territory (DGT) with funds from the Recovery and Resilience Plan (Investimento RE-C08-i02: Cadastro da Propriedade Rústica e Sistema de Monitorização da Ocupação do Solo).
+
 
