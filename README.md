@@ -7,6 +7,8 @@
 
 ## GEDICorrect: A Python Framework for GEDI Geolocation Correction at the Orbit, Beam or Footprint-Level Using Multiple Criteria and Parallel Processing Methods
 
+Available now as a pre-print! : https://arxiv.org/abs/2511.00319
+
 An open-source Python framework for precise GEDI geolocation correction using small-footprint ALS data, designed with simplicity and accessibility in mind. GEDICorrect integrates multiple methods, criteria, and metrics, including waveform matching, terrain matching, and relative height (RH) profile matching, to achieve refined geolocation accuracy at the orbit, beam, or footprint levels. By leveraging advanced similarity metrics - such as Pearson and Spearman waveform correlations, Curve Root Sum Squared Differential Area (CRSSDA), and Kullback-Leibler divergence - GEDICorrect ensures precise alignment between GEDI measurements and simulated data.
 
 Additionally, GEDICorrect incorporates parallel processing strategies using Python’s multiprocessing capabilities, enabling efficient handling of large-scale GEDI and ALS datasets. This scalability makes the framework practical for global-scale applications while maintaining accuracy and computational efficiency. This framework works as an extension to [GEDI Simulator](https://bitbucket.org/StevenHancock/gedisimulator/src/master/), developed by Steven Hancock and the GEDI Science Team, which we are thankful for their valuable contributions. More specifically, GEDICorrect uses the _gediRat_ and _gediMetrics_ programs from GEDI Simulator to simulate GEDI footprints using the ALS data, and extract metrics from those footprints.
@@ -101,11 +103,16 @@ Check out our other repository [GEDI-Pipeline](https://github.com/leonelluiscora
 
 ## Citing this project
 
+The GEDICorrect paper, explaining the internal mechanisms of the framework and test results, can be found as a preprint on https://arxiv.org/abs/2511.00319
+
+You can also cite the github repository:
+
 Corado, L., Godinho, S. (2025) GEDICorrect: A Python Framework for GEDI Geolocation Correction at the Orbit, Beam or Footprint-Level Using Multiple Criteria and Parallel Processing Methods. version 0.3.0, available at: https://github.com/leonelluiscorado/GEDICorrect
 
 ### Funding
 
 This work was conducted within the framework of the GEDI4SMOS project (Combining LiDAR, radar, and multispectral data to characterize the three-dimensional structure of vegetation and produce land cover maps), financially supported by the Directorate-General for Territory (DGT) with funds from the Recovery and Resilience Plan (Investimento RE-C08-i02: Cadastro da Propriedade Rústica e Sistema de Monitorização da Ocupação do Solo).
+
 
 
 
