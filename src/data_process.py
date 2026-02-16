@@ -106,7 +106,7 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
 
     # Parse CRS and return it
     with laspy.open(os.path.join(las_files_dir, las_files[0])) as las:
-        las_crs = las.header.parse_crs()
+        las_crs = _safe_parse_las_crs(las, las_files[0])
         crs = normalize_crs(las_crs, explicit_epsg)
         print(f"LAS CRS is {crs}")
 
@@ -131,8 +131,9 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
             las_file = os.path.join(las_files_dir, file)
             with laspy.open(las_file) as las:
 
-                # Ignore LAS with different CRS
-                if las.header.parse_crs() != crs:
+                # Ignore LAS with different CRS or invalid CRS
+                this_las_crs = _safe_parse_las_crs(las, file)
+                if this_las_crs is None and explicit_epsg is None:
                     pbar.update(1)
                     continue
 
@@ -163,6 +164,17 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
     print(f"ALS Bounds Shapefile saved at: {shp_output_path}")
 
     return las_extents, crs
+
+def _safe_parse_las_crs(las, filename):
+    """
+    Parse LAS CRS and return something.
+    Returns None when CRS cannot be parsed from WKT.
+    """
+    try:
+        return las.header.parse_crs()
+    except Exception as e:
+        print(f"[Setup] Warning: Failed to parse CRS in LAS '{filename}': {e}")
+        return None
 
 def normalize_crs(crs, epsg_code=None):
     """
