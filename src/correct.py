@@ -83,7 +83,7 @@ class GEDICorrect:
         self.setup_status = self._setup()
 
 
-    def simulate(self, grid_size=15, grid_step=1):
+    def simulate(self, grid_size=15, grid_step=1, n_points=None, min_dist=None, max_radius=None):
         """
         This function performs the correction sequence on given GEDI files to class instance
 
@@ -105,19 +105,27 @@ class GEDICorrect:
         print(f"[Simulate] Saving files in temporary directory : {self.temp_dir.name}")
 
         ## Save ALS List from *las_dir* to temporary directory for simulation
-        als_list = [os.path.join(self.las_dir, f) for f in os.listdir(self.las_dir) if (f.endswith('.las') or f.endswith('.laz'))]
+        als_list = [os.path.join(self.las_dir, f) for f in os.listdir(self.las_dir) if (f.endswith('.las'))]
 
         ## Save ALS list of files for Simulation
         with open(os.path.join(self.temp_dir.name, "alsList.txt"), mode="w") as las_txt_file:
             for als_file in als_list:
                 las_txt_file.write(f"{als_file}\n")
 
-        ## Always sample a middle point on the grid
-        if not grid_size % 2:
-            grid_size += 1
-        
-        # Generate grid of points
-        offsets = generate_grid(grid_size, grid_size, step=grid_step)
+        use_random = self.random and self.mode == "footprint" and n_points is not None
+
+        if use_random:
+            max_radius = 12.5 if max_radius is None else max_radius
+            min_dist = 1.0 if min_dist is None else min_dist
+
+        offsets = None
+        if not use_random:
+            ## Always sample a middle point on the grid
+            if not grid_size % 2:
+                grid_size += 1
+
+            # Generate grid of points
+            offsets = generate_grid(grid_size, grid_size, step=grid_step)
 
         # Correct every input file
         for filename, footprint_df in self.gedi_granules.items():
@@ -126,7 +134,13 @@ class GEDICorrect:
             scorer = CorrectionScorer(original_df=footprint_df, crs=self.crs, criteria=self.criteria)
 
             ## Simulate and Score all points
-            processed_footprints = self._sim_and_score(footprint_df=footprint_df, scorer=scorer, offsets=offsets)
+            processed_footprints = self._sim_and_score(footprint_df=footprint_df,
+                                                       scorer=scorer,
+                                                       offsets=offsets,
+                                                       n_points=n_points if use_random else None,
+                                                       max_radius=max_radius,
+                                                       min_dist=min_dist,
+                                                       simulate_original=use_random)
 
             # Select correction mode
             if self.mode == "orbit":
@@ -138,8 +152,12 @@ class GEDICorrect:
                 best_offsets = self._beam_correct(processed_footprints)
 
             if self.mode == "footprint":
-                print("[GEDICorrect] Correcting at the FOOTPRINT LEVEL")
-                best_offsets = self._footprint_correct(processed_footprints)
+                if use_random:
+                    print("[GEDICorrect] Correcting at the FOOTPRINT LEVEL using Random Points")
+                    best_offsets = self._footprint_random_correct(processed_footprints)
+                else:
+                    print("[GEDICorrect] Correcting at the FOOTPRINT LEVEL using Cluster")
+                    best_offsets = self._footprint_correct(processed_footprints)
 
             if not len(best_offsets):
                 print(f"[GEDICorrect] Error in correcting file {filename}. Try again.")
@@ -403,9 +421,28 @@ class GEDICorrect:
                 best_offsets[shot_id] = max(footprint.offset_scores, key=lambda entry: entry[1])[0]
 
         return best_offsets
+
+
+    def _footprint_random_correct(self, footprints):
+        """Select the best random offset for each footprint independently"""
+
+        if not footprints:
+            return {}
+
+        best_offsets = {}
+        for footprint in footprints:
+            if not footprint.offset_scores:
+                continue
+
+            best_offsets[int(footprint.shot_number)] = max(
+                footprint.offset_scores,
+                key=lambda entry: entry[1]
+            )[0]
+
+        return best_offsets
     
 
-    def _sim_and_score(self, footprint_df, scorer, offsets):
+    def _sim_and_score(self, footprint_df, scorer, offsets=None, n_points=None, max_radius=None, min_dist=None, simulate_original=False):
         '''
         Simulates and scores all footprints inside a file.
         Saves corrected footprints in the simplest form, with only a shot_number, beam,
@@ -417,6 +454,10 @@ class GEDICorrect:
             self._sim_scorer_footprint,
             scorer=scorer,
             offsets=offsets,
+            n_points=n_points,
+            max_radius=max_radius,
+            min_dist=min_dist,
+            simulate_original=simulate_original,
             original_df=footprint_df,
         )
 
@@ -439,7 +480,7 @@ class GEDICorrect:
         return scored_footprints
     
     
-    def _sim_scorer_footprint(self, footprint_row, scorer, offsets, original_df):
+    def _sim_scorer_footprint(self, footprint_row, scorer, offsets, n_points, max_radius, min_dist, simulate_original, original_df):
         '''
         Helper/Partial Function used in processing of '_sim_and_score'
         '''
@@ -451,6 +492,10 @@ class GEDICorrect:
             original_df=original_df,
             crs=str(self.crs).split(":")[-1],
             grid=offsets,
+            num_points=n_points,
+            max_radius=max_radius,
+            min_dist=min_dist,
+            simulate_original=simulate_original,
         )
 
         if not isinstance(sim, pd.DataFrame) or len(sim) < 1:

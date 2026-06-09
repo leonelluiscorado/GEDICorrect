@@ -37,7 +37,10 @@ for file in l1b_files:
     l2a_file = gpd.read_file(os.path.join(l2a_dir, l2a_dict[file]), engine='pyogrio')
 
     cols_to_keep = ['shot_number', 'degrade_flag', 'quality_flag', 'elev_lowestmode', 'digital_elevation_model', 
-                    'num_detectedmodes', 'solar_elevation', 'sensitivity']
+                    'num_detectedmodes', 'solar_elevation', 'sensitivity', 'rx_assess_sd_corrected', 'selected_algorithm',
+                    'rx_processing_back_threshold', 'rx_processing_mean', 'rx_processing_smoothwidth_zcross']
+    
+    
     cols_to_keep = cols_to_keep + [f"rh_{i}" for i in range(1, 101)]
 
     rename_col = {}

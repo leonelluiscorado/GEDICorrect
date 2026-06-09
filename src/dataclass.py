@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import List, Tuple
 
-# Offsets are (0, -1) e.g.
-Offset = Tuple[int, int]
+# Offsets are (0.0, -1.0) e.g.
+Offset = Tuple[float, float]
 
 # Simple Dataclass to pass between processes
 @dataclass
