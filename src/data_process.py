@@ -97,7 +97,7 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
     """
     las_extents = {}
 
-    las_files = [f for f in os.listdir(las_files_dir) if (f.endswith('.las') or f.endswith('.laz'))]
+    las_files = [f for f in os.listdir(las_files_dir) if f.endswith('.las')]
     shp_file = [f for f in os.listdir(las_files_dir) if (f.endswith('.shp') and f"CorrectALSBounds" in f)]
 
     if len(las_files) == 0:

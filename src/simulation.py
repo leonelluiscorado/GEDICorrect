@@ -50,19 +50,19 @@ def generate_random_points(centroid_x, centroid_y, num_points, max_radius=12.5, 
         min_dist (float): Minimum distance between each simulated point.
 
     Returns:
-        points (list): A list of Point objects (with x,y coordinates) which represent the points
-                       around each footprint's centroid.
+        offsets (list): A list of (x,y) offsets in meters around each footprint's centroid.
     """
-    centroid = Point(centroid_x, centroid_y)
-    
-    # Define the boundary of the circle within which points will be placed
-    boundary = centroid.buffer(max_radius)
     points = []
+    offsets = []
+    attempts = 0
+    max_attempts = max(num_points * 100, 1000)
+    rng = np.random.default_rng()
     
     # Keep trying until all simulated points are valid
-    while len(points) < num_points:
-        angle = np.random.uniform(0, 2 * np.pi)
-        distance = np.random.uniform(0, max_radius)
+    while len(points) < num_points and attempts < max_attempts:
+        attempts += 1
+        angle = rng.uniform(0, 2 * np.pi)
+        distance = rng.uniform(0, max_radius)
         x = centroid_x + np.cos(angle) * distance
         y = centroid_y + np.sin(angle) * distance
         new_point = Point(x, y)
@@ -70,12 +70,9 @@ def generate_random_points(centroid_x, centroid_y, num_points, max_radius=12.5, 
         # Check if the new point is at least min_dist meters away from all other points
         if all(new_point.distance(other) >= min_dist for other in points):
             points.append(new_point)
-        
-        # If the points list is filled and all are valid, exit the loop
-        if len(points) == num_points:
-            break
+            offsets.append((x - centroid_x, y - centroid_y))
 
-    return points
+    return offsets
 
 def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
                            grid=None,
@@ -120,25 +117,34 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
     # Nbins
     nbins = str(original_fpt['rx_sample_count'].values[0]+1)
     
-    ## Generate txt list of coordinates from a grid
+    offsets = None
+
+    ## Generate offset list from a grid
     if grid:
+        offsets = grid
+    ## Generate offset list from random points
+    elif num_points:
+        ## Generate random points around footprint
+        offsets = generate_random_points(footprint['geometry'].x,
+                                         footprint['geometry'].y,
+                                         num_points=num_points,
+                                         max_radius=max_radius,
+                                         min_dist=min_dist)
+
+        if len(offsets) < num_points:
+            return []
+
+        if simulate_original:
+            offsets = [(0.0, 0.0)] + offsets
+
+    if offsets:
         with open(os.path.join(temp_dir, f"points_test_{idx}.txt"), "w") as f:
-            for offset in grid:
+            for offset in offsets:
                 offset_x = footprint['geometry'].x + offset[0]
                 offset_y = footprint['geometry'].y + offset[1]
                 f.write(f"{offset_x} {offset_y}\n")
-    ## Generate txt list of coordinates from random points
-    elif num_points:
-        # DEPRECATED
-        ## Generate random points around footprint
-        rand_points = generate_random_points(footprint['geometry'].x, footprint['geometry'].y, num_points=num_points, max_radius=max_radius, min_dist=min_dist)
-
-        with open(os.path.join(temp_dir, f"points_test_{idx}.txt"), "w") as f:
-            if simulate_original:
-                f.write(f"{footprint['geometry'].x} {footprint['geometry'].y}\n") # Write original footprint position as first point
-                num_points += 1  # Additional point
-            for point in rand_points:
-                f.write(f"{point.x} {point.y}\n")
+    else:
+        return []
 
     h5_file_dir = os.path.join(temp_dir, f"simu_wavef_{idx}.h5")
     points_file_dir = os.path.join(temp_dir, f"points_test_{idx}.txt")
@@ -171,10 +177,10 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
         return []
 
     ## Handle each output
-    txt_df = parse_txt(original_fpt, metric_outroot+'.metric.txt') ######## TODO: Transform shotnumber to string and csv must display differently
+    txt_df = parse_txt(original_fpt, metric_outroot+'.metric.txt')
     try:
-        if grid:
-            h5_df  = parse_simulated_h5(h5_file_dir, len(grid))
+        if offsets:
+            h5_df  = parse_simulated_h5(h5_file_dir, len(offsets))
         else:
             h5_df  = parse_simulated_h5(h5_file_dir, num_points)
     except ValueError as e:
@@ -188,19 +194,11 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
     all_df['geometry'] = list(zip(all_df.lon, all_df.lat))
     all_df['geometry'] = all_df['geometry'].apply(Point)
 
-    if grid:
-        all_df['grid_offset'] = grid
-        grid_size = len(grid)
+    if offsets:
+        all_df['grid_offset'] = offsets
+        n_simulations = len(offsets)
 
-    # Filter out special case footprints
-    if grid and simulate_original:
-        grid_size = len(grid) + 1
-
-    if grid and len(all_df) < grid_size:
-        # Did not simulate all points, discard
-        return []
-    
-    if num_points and len(all_df) < num_points:
+    if offsets and len(all_df) < n_simulations:
         # Did not simulate all points, discard
         return []
 

@@ -31,9 +31,6 @@ parser.add_argument('--save_origin_location', required=False, help='Flag option 
 parser.add_argument('--mode', required=True, help='Selects the footprint correction method between Orbit-level, Beam-level or Footprint-level, based on the list [“orbit”, “beam”, “footprint”].', \
                     type=str, default="footprint")
 
-parser.add_argument('--random', required=False, help='Use random footprint-level correction without clusterization. Used only if mode == \'footprint\'', \
-                    action='store_true', default=False)
-
 parser.add_argument('--criteria', required=True, help='Set of criteria to select the best footprint. Select from "wave", "rh", "rh_correlation" and "terrain". \
                                                        Select "all" to evaluate all simulated footprints with all the possible criteria', type=str, default='kl')
 
@@ -51,6 +48,18 @@ parser.add_argument('--parallel', required=False, help='Use parallel processing 
                     action='store_true')
 
 parser.add_argument('--n_processes', required=False, help='Number of processes to use for parallel processing.', type=int, default=4)
+
+parser.add_argument('--random', required=False, help='Use random footprint-level correction without clusterization. Used only if mode == \'footprint\'', \
+                    action='store_true', default=False)
+
+parser.add_argument('--n_points', required=False, help='Number of points to simulate using random footprint-level correction. Used only if \'random\' is true \
+                    Defaults to 100 points around Original Footprint', type=int, default=100)
+
+parser.add_argument('--radius', required=False, help='Max Radius to simulate points around using random footprint-level correction. Used only if \'random\' is true.\
+                    Defaults to 12.5m around Original Footprint.', type=float, default=12.5)
+
+parser.add_argument('--min_dist', required=False, help='Minimum distance between candidate points around original footprint to simulate \
+                    using random footprint-level correction. Used only if \'random\' is true. Defaults to 1 meter between points.', type=float, default=1.0)
 
 args = parser.parse_args()
 
@@ -72,6 +81,9 @@ if args.granules_dir:
 if args.input_file:
     input_granules = [args.input_file]
 
+if args.random and args.mode != "footprint":
+    args.random = False
+
 correct = GEDICorrect(granule_list=input_granules,
                       las_dir=args.las_dir,
                       out_dir=args.out_dir,
@@ -84,9 +96,6 @@ correct = GEDICorrect(granule_list=input_granules,
                       als_algorithm=args.als_algorithm,
                       use_parallel=args.parallel,
                       n_processes=args.n_processes)
-
-if args.random and args.mode != "footprint":
-    args.random = False
 
 if args.random:
     results = correct.simulate(n_points=args.n_points, max_radius=args.radius, min_dist=args.min_dist)
