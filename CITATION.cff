@@ -3,7 +3,7 @@ message: "If you use GEDICorrect, please cite the paper and software."
 title: "GEDICorrect"
 type: software
 version: 1.0.0
-date-released: 2026-09-04
+date-released: 2026-09-09
 license: GPL-3.0-only
 repository-code: "https://github.com/leonelluiscorado/GEDICorrect"
 url: "https://github.com/leonelluiscorado/GEDICorrect"
