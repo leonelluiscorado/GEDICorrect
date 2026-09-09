@@ -1,0 +1,9 @@
+include .env.example
+include .dockerignore
+include Dockerfile
+include install_hancock_tools.bash
+include Start-GEDICorrect.cmd
+include Stop-GEDICorrect.cmd
+include compose.yaml
+recursive-include scripts *.ps1
+include utils/ascii.txt

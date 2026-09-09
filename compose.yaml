@@ -1,0 +1,25 @@
+services:
+  gedicorrect:
+    build:
+      context: .
+      args:
+        GEDICORRECT_UID: "${GEDICORRECT_UID:-10001}"
+        GEDICORRECT_GID: "${GEDICORRECT_GID:-10001}"
+    image: gedicorrect:1.0.0
+    ports:
+      - "${GEDICORRECT_PORT:-8501}:8501"
+    volumes:
+      - "${GEDICORRECT_ALS_DIR:-./data/als}:/data/als:ro"
+      - "${GEDICORRECT_INPUT_DIR:-./data/input}:/data/input:ro"
+      - "${GEDICORRECT_OUTPUT_DIR:-./data/output}:/data/output"
+    cpus: "${GEDICORRECT_CPUS:-4.0}"
+    mem_limit: "${GEDICORRECT_MEMORY:-16g}"
+    shm_size: "${GEDICORRECT_SHM_SIZE:-2g}"
+    environment:
+      GEDICORRECT_CONTAINER: "1"
+      GEDICORRECT_JOB_STATE: "/data/output/.gedicorrect/job.json"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+    restart: unless-stopped

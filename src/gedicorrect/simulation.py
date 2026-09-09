@@ -153,12 +153,22 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
 
     ## Simulate waveforms
     try:
-        exit_code = subprocess.run(["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", str(crs), "-ground", "-maxBins", nbins, "-output", h5_file_dir], timeout=60, stdout=subprocess.DEVNULL)
+        subprocess.run(
+            ["gediRat", "-inList", las_points_dir, "-listCoord", points_file_dir, "-hdf", "-aEPSG", str(crs), "-ground", "-maxBins", nbins, "-output", h5_file_dir],
+            timeout=60,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
     except subprocess.TimeoutExpired:
         print(f"gediRat timeout at footprint {shot_number}")
         return []
-    except subprocess.CalledProcessError:
-        print(f"gediRat failed on {shot_number}")
+    except subprocess.CalledProcessError as error:
+        print(f"gediRat failed on {shot_number}: {error.stderr.strip()}")
+        return []
+    except OSError as error:
+        print(f"gediRat could not start on {shot_number}: {error}")
         return []
 
     ## Check if footprint simulated:
@@ -168,12 +178,22 @@ def process_all_footprints(footprint, temp_dir, las_dir, original_df, crs,
 
     ## Extract waveform metrics
     try:
-        exit_code = subprocess.run(["gediMetric", "-input", h5_file_dir, "-readHDFgedi", "-ground", "-varScale", "3.5", "-sWidth", "0.8", "-rhRes", "1", "-laiRes", "5", "-outRoot", metric_outroot], timeout=60, stdout=subprocess.DEVNULL)
+        subprocess.run(
+            ["gediMetric", "-input", h5_file_dir, "-readHDFgedi", "-ground", "-varScale", "3.5", "-sWidth", "0.8", "-rhRes", "1", "-laiRes", "5", "-outRoot", metric_outroot],
+            timeout=60,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
     except subprocess.TimeoutExpired:
-        print(f"gediMetrics timeout at footprint {shot_number}")
+        print(f"gediMetric timeout at footprint {shot_number}")
         return []
-    except subprocess.CalledProcessError:
-        print(f"gediMetrics failed on {shot_number}")
+    except subprocess.CalledProcessError as error:
+        print(f"gediMetric failed on {shot_number}: {error.stderr.strip()}")
+        return []
+    except OSError as error:
+        print(f"gediMetric could not start on {shot_number}: {error}")
         return []
 
     ## Handle each output
