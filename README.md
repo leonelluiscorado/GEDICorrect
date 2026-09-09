@@ -61,6 +61,8 @@ Install and start [Docker Desktop](https://www.docker.com/products/docker-deskto
 Start-GEDICorrect.cmd
 ```
 
+![GEDICorrect CMD](https://raw.githubusercontent.com/leonelluiscorado/GEDICorrect/main/readme/GEDICorrect-CMD.png)
+
 You can also create a shortcut to your desired location on Windows.
 
 On the first run, GEDICorrect displays native Windows dialogs for selecting:
