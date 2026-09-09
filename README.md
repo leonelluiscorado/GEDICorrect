@@ -10,13 +10,13 @@
 
 GEDICorrect is a scalable Python framework for correcting GEDI geolocation at the orbit, beam, or footprint level using small-footprint airborne laser scanning (ALS) data. It combines waveform, terrain, and relative-height matching criteria with parallel processing and the `gediRat` and `gediMetric` programs from [GEDI Simulator](https://bitbucket.org/StevenHancock/gedisimulator/src/master/).
 
-Version 1.0.0 provides three ways to use the same correction engine:
+GEDICorrect provides:
 
 - A local browser interface for guided operation.
 - The `gedicorrect` command-line program.
 - An importable Python API.
 
-The accompanying paper is [*GEDICorrect: A Scalable Python Tool for Orbit-, Beam-, and Footprint-Level GEDI Geolocation Correction*](https://doi.org/10.48550/arXiv.2511.00319).
+The accompanying paper is [*GEDICorrect: A Scalable Python Tool for Orbit-, Beam-, and Footprint-Level GEDI Geolocation Correction*](https://doi.org/10.1016/j.srs.2026.100469).
 
 ## Supported platforms
 
@@ -24,11 +24,11 @@ The Python package targets Python 3.11 and 3.12. GEDI Simulator is a compiled Li
 
 | Platform | Recommended method |
 | --- | --- |
-| Linux | Docker or native installation |
+| Linux | Native installation or Docker |
 | Windows 10/11 | Docker Desktop; WSL2 for advanced users |
-| macOS | Docker Desktop |
+| macOS | Docker Desktop (WARNING: not tested yet) |
 
-Docker is the easiest option for most users because it packages Python, GEDICorrect, GEDI Simulator, and the local web UI together. Processing stays on the user's computer.
+Docker is the easiest option for most users because it packages Python, GEDICorrect, GEDI Simulator, and the local web UI together. All input data and output data stays on the user's computer.
 
 ## Data requirements
 
@@ -36,16 +36,22 @@ Docker is the easiest option for most users because it packages Python, GEDICorr
 
 GEDICorrect requires:
 
-- An ALS dataset stored as uncompressed `.las` files with a defined projected CRS, or an EPSG code supplied by the user.
+- An ALS dataset in `.las` files with a defined projected CRS, or an EPSG code supplied by the user.
 - Intersecting GEDI L1B and L2A products merged into GeoPackage (`.gpkg`) files.
-- A writable output directory.
 
-The packaged preparation commands merge L1B/L2A inputs and convert LAZ files when the optional LAZ dependencies are installed:
+The packaged preparation commands merge L1B/L2A inputs and convert LAZ files when the optional LAZ dependencies are installed.
 
+Merge L1B and L2A data products:
 ```bash
 gedicorrect prepare align --l1b-dir "/path/to/L1B" --l2a-dir "/path/to/L2A" --out-dir "/path/to/merged"
+```
+
+Convert .LAZ to .LAS (required to run the framework):
+```bash
 gedicorrect prepare las --las-dir "/path/to/point-clouds"
 ```
+
+To download GEDI L1B and L2A data, please check out [GEDI-Pipeline](https://github.com/leonelluiscorado/GEDI-Pipeline) or its [QGIS plugin](https://plugins.qgis.org/plugins/gedi_pipeline_plugin/#plugin-about), both are unified workflows to download GEDI data in Geopackage format, which are entirely compatible with GEDICorrect.
 
 ## Quick start on Windows
 
@@ -55,44 +61,41 @@ Install and start [Docker Desktop](https://www.docker.com/products/docker-deskto
 Start-GEDICorrect.cmd
 ```
 
+You can also create a shortcut to your desired location on Windows.
+
 On the first run, GEDICorrect displays native Windows dialogs for selecting:
 
 1. The folder containing uncompressed ALS `.las` files.
 2. The folder containing merged GEDI `.gpkg` files.
 3. The folder where results should be saved.
 
-The launcher writes the Docker configuration, starts Docker Desktop when necessary, checks the application image, and opens <http://localhost:8501>. The initial build can take several minutes; subsequent launches reuse Docker's build cache. The browser interface detects the mounted data automatically, so Windows paths never need to be typed into the UI.
+The launcher writes the Docker configuration, starts Docker Desktop when necessary, checks the application image, and opens the UI <http://localhost:8501>.
 
-Double-click `Start-GEDICorrect.cmd` again for later sessions. The launcher displays the GEDICorrect ASCII banner and the saved ALS, GEDI, and output folders, then accepts `Y`/`Yes` to reuse them, `N`/`No` to open the folder selectors again, or `Q`/`Quit` to exit. Pressing Enter accepts the saved folders. To stop the application, double-click:
+You can double-click `Start-GEDICorrect.cmd` again for later sessions. GEDICorrect will display saved ALS, GEDI, and output folders, type and ENTER `Y`/`Yes` to reuse them, `N`/`No` to open the folder selectors again, or `Q`/`Quit` to exit. Pressing Enter accepts the saved folders. To stop the application, double-click:
 
 ```text
 Stop-GEDICorrect.cmd
 ```
+also located in the cloned repository's folder.
 
-The generated `.env` file is machine-specific and ignored by Git. Users do not need to edit it manually.
-
-> Keep the complete GEDICorrect source folder on a normal Windows drive such as `C:\Users\name\GEDICorrect`. Do not start the Windows launcher from `\\wsl.localhost\...`, a network share, or an administrator window. The launcher can select data from other local Windows drives.
+>Tip: Keep the complete GEDICorrect source folder on a normal Windows drive such as `C:\Users\name\GEDICorrect`. Do not start the Windows launcher from `\\wsl.localhost\...`, a network share, or an administrator window. The launcher can select data from other local Windows drives.
 
 ## Quick start with Docker Compose
 
-The command-line workflow remains available on Linux, macOS, WSL2, and Windows terminals. Install Docker Desktop on Windows or macOS, or Docker Engine with the Compose plugin on Linux.
+The command-line workflow remains available on Linux, macOS (presumably, not tested), WSL2, and Windows terminals. Install Docker Desktop on Windows or Docker Engine with the Compose plugin on Linux.
 
 Clone the repository and create default data directories:
 
 ```bash
 git clone https://github.com/leonelluiscorado/GEDICorrect.git
 cd GEDICorrect
-mkdir -p data/als data/input data/output
-cp .env.example .env
 ```
-
-Place `.las` files in `data/als` and merged `.gpkg` files in `data/input`, then build and start GEDICorrect:
+and then:
 
 ```bash
 docker compose up --build
 ```
-
-Open <http://localhost:8501>. In the interface, use these container paths:
+Open <http://localhost:8501>. In the interface, these container paths are automatically mounted:
 
 ```text
 ALS directory:    /data/als
@@ -100,11 +103,9 @@ GEDI directory:   /data/input
 Output directory: /data/output
 ```
 
-In container mode these paths are selected automatically; they are shown here only to explain the volume mapping.
-
 Results and job logs appear in the host's `data/output` directory. ALS and GEDI inputs are mounted read-only; only the output directory is writable.
 
-Stop the service with:
+You can stop the service with:
 
 ```bash
 docker compose down
@@ -112,7 +113,13 @@ docker compose down
 
 ### Advanced manual folder configuration
 
-Edit `.env` and use absolute paths:
+Before Docker Compose, edit `.env` and use absolute paths:
+
+```bash
+cp .env.example .env
+```
+
+Inside  `.env`:
 
 ```dotenv
 GEDICORRECT_ALS_DIR=/path/to/ALS
@@ -127,8 +134,6 @@ On Windows, the launcher creates this file automatically. For manual Docker Desk
 On native Linux, set `GEDICORRECT_UID` and `GEDICORRECT_GID` in `.env` to the output of `id -u` and `id -g` before building. This lets the non-root container user write results with the correct host ownership.
 
 The worker selector in the UI observes the container CPU quota. Native numerical libraries are limited to one thread per worker to avoid oversubscribing the CPU.
-
-> **Apple Silicon:** the container should be built natively for ARM64 before release. If GEDI Simulator requires an AMD64 image, Docker can emulate it, but correction will be slower. Validate the target image on representative data before production use.
 
 ## Native installation on Linux or WSL2
 
@@ -153,10 +158,10 @@ For development, an existing Python environment can instead install the reposito
 python -m pip install -e ".[ui,laz,raster,dev]"
 ```
 
-After the v1.0.0 package is published, the package-only installation will be:
+To install the released Python package:
 
 ```bash
-python -m pip install "GEDICorrect[ui]"
+python -m pip install "GEDICorrect[ui]==1.0.0"
 ```
 
 This installs the Python application but not the external GEDI Simulator programs. Run `gedicorrect check` to diagnose them.
@@ -169,7 +174,7 @@ Start the local interface after a native installation:
 gedicorrect ui
 ```
 
-The default address is <http://127.0.0.1:8501>. The interface validates paths and parameter combinations, detects available processors, executes corrections in an isolated process, displays the job log, and allows a running job to be cancelled. Active-job state is stored outside the browser session, so refreshing or reopening the page reconnects to a correction that is still running. Data is not sent to a remote server.
+The default address is <http://127.0.0.1:8501>.
 
 ## Command-line use
 
@@ -217,8 +222,6 @@ gedicorrect run \
   --min-dist 1.0
 ```
 
-For compatibility, underscore-style options such as `--las_dir` remain accepted by the v1.0.0 CLI.
-
 ## Python API
 
 ```python
@@ -253,7 +256,7 @@ Modes:
 - `beam`: chooses one offset for each GEDI beam.
 - `footprint`: chooses offsets using temporal footprint clustering, or independent random candidates.
 
-Criteria:
+Metrics:
 
 - `wave_pearson`
 - `wave_spearman`
@@ -277,11 +280,12 @@ Check the runtime before processing:
 gedicorrect check
 ```
 
-If `gediRat` or `gediMetric` is missing, use the Docker workflow or rerun `install_hancock_tools.bash` on Debian/Ubuntu. If Docker processing is unexpectedly slow on Windows, keep large datasets in the WSL2/Linux filesystem when possible. On macOS, filesystem sharing and AMD64 emulation can reduce performance.
+If `gediRat` or `gediMetric` is missing, use the Docker workflow or rerun `install_hancock_tools.bash` on Debian/Ubuntu. If Docker processing is unexpectedly slow on Windows, keep large datasets in the WSL2/Linux filesystem when possible.
 
-Docker on WSL2 may report `WARNING: No blkio throttle.read_bps_device support`. This only means that optional per-device disk throttling is unavailable; GEDICorrect does not request it, so the warning can be ignored.
 
-If Docker reports a missing `/run/guest-services/distro-services/...sock`, the Windows launcher was started from a `\\wsl.localhost\...` folder. Copy or extract the complete repository to a local Windows directory and start it there.
+> If Docker reports a missing `/run/guest-services/distro-services/...sock`, the Windows launcher was started from a `\\wsl.localhost\...` folder. Copy or extract the complete repository to a local Windows directory and start it there.
+
+> Docker on WSL2 may report `WARNING: No blkio throttle.read_bps_device support`. This only means that optional per-device disk throttling is unavailable; GEDICorrect does not request it, so the warning can be ignored.
 
 ## Development
 
@@ -296,7 +300,7 @@ Contributions are welcome through documented issues and pull requests. Please in
 
 ## Citation
 
-Corado, L., Godinho, S., Silva, C. A., Guerra-Hernández, J., Valério, F., Gonçalves, T., & Salgueiro, P. (2025). *GEDICorrect: A Scalable Python Tool for Orbit-, Beam-, and Footprint-Level GEDI Geolocation Correction*. [https://doi.org/10.48550/arXiv.2511.00319](https://doi.org/10.48550/arXiv.2511.00319)
+Corado, L., Godinho, S., Silva, C. A., Pascual, A., Guerra-Hernández, J., Valério, F., Gonçalves, T., & Salgueiro, P. (2026). *GEDICorrect: A Scalable Python Tool for Orbit-, Beam-, and Footprint-Level GEDI Geolocation Correction*. [https://doi.org/10.1016/j.srs.2026.100469](https://doi.org/10.1016/j.srs.2026.100469)
 
 Software releases can additionally be cited as:
 
@@ -306,10 +310,14 @@ Software releases can additionally be cited as:
 
 - Dubayah, R., et al. (2020). The Global Ecosystem Dynamics Investigation: High-resolution laser ranging of the Earth's forests and topography. *Science of Remote Sensing*. [https://doi.org/10.1016/j.srs.2020.100002](https://doi.org/10.1016/j.srs.2020.100002)
 - Hancock, S., et al. (2019). The GEDI simulator: A large-footprint waveform lidar simulator for calibration and validation of spaceborne missions. *Earth and Space Science*. [https://doi.org/10.1029/2018EA000506](https://doi.org/10.1029/2018EA000506)
-- [GEDI L1B Geolocated Waveform Data](https://lpdaac.usgs.gov/products/gedi01_bv001/)
-- [GEDI L2A Elevation and Height Metrics Data](https://lpdaac.usgs.gov/products/gedi02_av002/)
+- Hancock, S. (2026). gediSimulator [Computer software]. https://bitbucket.org/StevenHancock/gedisimulator/src/master/
+- [GEDI L1B Geolocated Waveform Data](https://www.earthdata.nasa.gov/data/catalog/lpcloud-gedi01-b-003)
+- [GEDI L2A Elevation and Height Metrics Data](https://www.earthdata.nasa.gov/data/catalog/lpcloud-gedi02-a-003)
 
-This work was conducted within the GEDI4SMOS project and financially supported by the Directorate-General for Territory (DGT) with Recovery and Resilience Plan funds (Investimento RE-C08-i02).
+
+## Funding
+
+This work was conducted within the framework of the GEDI4SMOS project (Combining LiDAR, radar, and multispectral data to characterize the three-dimensional structure of vegetation and produce land cover maps), financially supported by the Directorate-General for Territory (DGT) with funds from the Recovery and Resilience Plan (Investimento RE-C08-i02: Cadastro da Propriedade Rústica e Sistema de Monitorização da Ocupação do Solo).
 
 ## License
 
