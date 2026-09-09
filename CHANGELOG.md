@@ -2,7 +2,7 @@
 
 All notable changes to GEDICorrect are documented in this file.
 
-## 1.0.0 - Unreleased
+## 1.0.0 - Released 2026-09-09
 
 ### Added
 
