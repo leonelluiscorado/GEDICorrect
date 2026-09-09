@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use GEDICorrect, please cite the paper and software."
+title: "GEDICorrect"
+type: software
+version: 1.0.0
+date-released: 2026-09-04
+license: GPL-3.0-only
+repository-code: "https://github.com/leonelluiscorado/GEDICorrect"
+url: "https://github.com/leonelluiscorado/GEDICorrect"
+authors:
+  - family-names: Corado
+    given-names: Leonel
+  - family-names: Godinho
+    given-names: Sérgio
+preferred-citation:
+  type: article
+  title: "GEDICorrect: A scalable python tool for orbit-, beam-, and footprint-level GEDI geolocation correction"
+  year: 2025
+  doi: "10.1016/j.srs.2026.100469"
+  authors:
+    - family-names: Corado
+      given-names: Leonel
+    - family-names: Godinho
+      given-names: Sérgio
+    - family-names: Silva
+      given-names: Carlos Alberto
+    - family-names: Pascual
+      given-names: Adrian
+    - family-names: Guerra-Hernández
+      given-names: Juan
+    - family-names: Valerio
+      given-names: Francesco
+    - family-names: Gonçalves
+      given-names: Teresa
+    - family-names: Salgueiro
+      given-names: Pedro

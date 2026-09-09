@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 
 from tqdm import tqdm
+from .config import DEFAULT_ALL_CRITERIA
 
 # AVAILABLE FRAMEWORK CRITERIA
 possible_criteria = ['wave_pearson', 'wave_spearman', 'wave_distance', 'kl', 'rh_distance', 'terrain']
@@ -80,7 +81,9 @@ class CorrectionScorer:
 
         """
         if criteria == 'all':
-            return possible_criteria
+            # Pearson is the default correlation when all compatible criteria
+            # are requested; Pearson and Spearman cannot share one score run.
+            return list(DEFAULT_ALL_CRITERIA)
 
         criteria = criteria.split(" ")
 
@@ -374,4 +377,7 @@ class CorrectionScorer:
         Returns:
             DataFrame: Normalized column of correlations.
         """
+        if column.max() - column.min() == 0:
+            return pd.Series([1.0] * len(column), index=column.index)
+
         return (column - column.min()) / (column.max() - column.min())

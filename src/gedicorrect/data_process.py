@@ -13,7 +13,7 @@ from tqdm import tqdm
 from pyproj import CRS
 
 import os
-from memory_profiler import profile
+from pathlib import Path
 
 def create_buffer(footprint, distance):
     """
@@ -73,7 +73,7 @@ def generate_grid(x_max, y_max, step=1):
     return offsets
 
 
-def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
+def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex", cache_dir=None):
     """
     Builds extent bounds in every .las file inside **las_files_dir**
     The **algorithm** argument selects the bounding box strategy between 'simple' (bounding box of min and max)
@@ -98,7 +98,9 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
     las_extents = {}
 
     las_files = [f for f in os.listdir(las_files_dir) if f.endswith('.las')]
-    shp_file = [f for f in os.listdir(las_files_dir) if (f.endswith('.shp') and f"CorrectALSBounds" in f)]
+    legacy_shp_files = [f for f in os.listdir(las_files_dir) if (f.endswith('.shp') and "CorrectALSBounds" in f)]
+    cache_root = Path(cache_dir or las_files_dir) / ".gedicorrect-cache"
+    cache_path = cache_root / f"CorrectALSBounds_{algorithm}.gpkg"
 
     if len(las_files) == 0:
         raise Exception("No LAS files found in specified directory.")
@@ -110,13 +112,15 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
         crs = normalize_crs(las_crs, explicit_epsg)
         print(f"LAS CRS is {crs}")
 
-    if len(shp_file) != 0:
-        # Bounds shapefile found, use it as bounds
-        shp_path = os.path.join(las_files_dir, shp_file[0])
-        
-        print(f"Shapefile found: {shp_path}... Using it as bounds")
+    existing_bounds = cache_path if cache_path.exists() else None
+    if existing_bounds is None and legacy_shp_files:
+        existing_bounds = Path(las_files_dir) / legacy_shp_files[0]
 
-        gdf = gpd.read_file(shp_path)
+    if existing_bounds is not None:
+        # Bounds shapefile found, use it as bounds
+        print(f"ALS bounds found: {existing_bounds}... Using them as bounds")
+
+        gdf = gpd.read_file(existing_bounds)
         if 'file_name' not in gdf.columns:
             raise ValueError("The shapefile must contain a file_name column to match LAS file names")
         
@@ -151,6 +155,9 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
                     del las_p, points
                     pbar.update(1)
 
+    if not las_extents:
+        raise ValueError("No LAS files with a usable CRS were found.")
+
     # Create a GeoDataFrame for the bounds
     gdf = gpd.GeoDataFrame(
         {"file_name": list(las_extents.keys())},
@@ -158,10 +165,13 @@ def get_las_extents(las_files_dir, explicit_epsg=None, algorithm="convex"):
         crs=crs.to_wkt() if crs else None,
     )
 
-    # Save as a shapefile
-    shp_output_path = os.path.join(las_files_dir, f"CorrectALSBounds_{algorithm}.shp")
-    gdf.to_file(shp_output_path)
-    print(f"ALS Bounds Shapefile saved at: {shp_output_path}")
+    # Save beside the correction outputs so read-only ALS mounts remain untouched.
+    cache_root.mkdir(parents=True, exist_ok=True)
+    temporary_cache = cache_root / f".CorrectALSBounds_{algorithm}.tmp.gpkg"
+    temporary_cache.unlink(missing_ok=True)
+    gdf.to_file(temporary_cache, driver="GPKG")
+    os.replace(temporary_cache, cache_path)
+    print(f"ALS bounds saved at: {cache_path}")
 
     return las_extents, crs
 

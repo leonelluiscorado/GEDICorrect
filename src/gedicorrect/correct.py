@@ -9,16 +9,14 @@ import pandas as pd
 from collections import defaultdict
 
 from .data_process import *
-from .simulation import process_all_footprints, init_random_seed, process_all_footprints
+from .simulation import process_all_footprints, init_random_seed
 from .scorer import CorrectionScorer
-from .dataclass import ScoredFootprint
+from .models import ScoredFootprint
 
 from tqdm import tqdm
 
 import multiprocessing
-from multiprocessing import Manager
 from functools import partial
-import gc
 
 
 class GEDICorrect:
@@ -127,6 +125,8 @@ class GEDICorrect:
             # Generate grid of points
             offsets = generate_grid(grid_size, grid_size, step=grid_step)
 
+        output_files = []
+
         # Correct every input file
         for filename, footprint_df in self.gedi_granules.items():
 
@@ -168,10 +168,13 @@ class GEDICorrect:
             corrected_rows = self._resimulate_best_offsets(best_offsets, footprint_df, scorer)
 
             # Save corrected file
-            self._save_outputs(results=corrected_rows, filename=filename)
+            output_file = self._save_outputs(results=corrected_rows, filename=filename)
+            if output_file:
+                output_files.append(output_file)
 
         # Clean Temp Dir
         del self.temp_dir
+        return output_files
 
 
     def _setup(self):
@@ -189,11 +192,16 @@ class GEDICorrect:
 
         ## Open LAS Files and check Coordinate System
         try:
-            self.las_extents, self.crs = get_las_extents(las_files_dir=self.las_dir, explicit_epsg=self.als_crs, algorithm=self.als_algorithm)
-            assert len(self.las_extents) != 0  # Check if opened something
-        except:
-            raise Exception("[Setup] Error opening LAS files. Check above exception for more information. Aborting")
-            return False
+            self.las_extents, self.crs = get_las_extents(
+                las_files_dir=self.las_dir,
+                explicit_epsg=self.als_crs,
+                algorithm=self.als_algorithm,
+                cache_dir=self.out_dir,
+            )
+            if not self.las_extents:
+                raise ValueError("No usable LAS bounds were generated.")
+        except Exception as error:
+            raise RuntimeError(f"[Setup] Error opening LAS files: {error}") from error
 
         # Open GEDI footprint files
         if self.granule_list and len(self.granule_list) >= 1:
@@ -209,9 +217,7 @@ class GEDICorrect:
                 self.gedi_granules[granule] = granule_df
         else:
             # Error defining gedi_granule
-            raise Exception("[Setup] No GEDI granules found. Specify another directory where GEDI",
-                             " L1B files exist and create another instance of this class")
-            return False
+            raise ValueError("[Setup] No GEDI granules found. Specify a merged L1B/L2A input.")
 
         # Check intersecting GEDI Orbits with LAS Extents
         try:
@@ -225,10 +231,13 @@ class GEDICorrect:
                     continue
 
                 print(f"[Setup] Found {len(self.gedi_granules[filename])} footprints that intersect with LAS at {filename}")
-        except:
-            raise Exception("[Setup] No Intersecting GEDI granules found. Specify another directory where intersecting GEDI",
-                             " L1B files exist, or intersecting LAS Files exist and create another instance of this class")
-            return False
+        except Exception as error:
+            raise RuntimeError(
+                f"[Setup] Could not compare GEDI and ALS intersections: {error}"
+            ) from error
+
+        if not self.gedi_granules:
+            raise RuntimeError("[Setup] No GEDI footprints intersect the supplied ALS data.")
 
         # Setup complete and OKAY
         return True
@@ -242,7 +251,7 @@ class GEDICorrect:
         """
         return self.setup_status
 
-    def _save_outputs(self, results, filename, cluster_results=None, offset=None, beam_offset=None) -> None:
+    def _save_outputs(self, results, filename, cluster_results=None, offset=None, beam_offset=None):
         """
         Saves the output of the correction process into new files of GEDI footprints.
 
@@ -282,16 +291,12 @@ class GEDICorrect:
 
             filename = filename.split("/")[-1]
 
-            if self.mode == "orbit":
-                out_df.to_file(os.path.join(self.out_dir, f"ORBIT_{filename}"))
+            prefix = self.mode.upper()
+            output_file = os.path.join(self.out_dir, f"{prefix}_{filename}")
+            out_df.to_file(output_file)
+            return output_file
 
-            if self.mode == "beam":
-                out_df.to_file(os.path.join(self.out_dir, f"BEAM_{filename}"))
-
-            if self.mode == "footprint":
-                out_df.to_file(os.path.join(self.out_dir, f"FOOTPRINT_{filename}"))
-
-        return
+        return None
 
 
     def _orbit_correct(self, summaries):
