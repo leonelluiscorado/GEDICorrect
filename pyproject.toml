@@ -61,7 +61,7 @@ gedicorrect-ui = "gedicorrect.cli:ui_main"
 Homepage = "https://github.com/leonelluiscorado/GEDICorrect"
 Repository = "https://github.com/leonelluiscorado/GEDICorrect"
 Issues = "https://github.com/leonelluiscorado/GEDICorrect/issues"
-Paper = "https://doi.org/10.48550/arXiv.2511.00319"
+Paper = "https://doi.org/10.1016/j.srs.2026.100469"
 Dataset = "https://doi.org/10.5281/zenodo.17494712"
 
 [tool.setuptools]
